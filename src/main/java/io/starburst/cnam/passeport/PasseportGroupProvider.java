@@ -34,6 +34,7 @@ public class PasseportGroupProvider implements GroupProvider {
     private final HttpClient httpClient;
 
     public PasseportGroupProvider(String apiUrl, String codeApplication, String trustStorePath, String trustStorePassword) {
+        log.fine("Initializing PasseportGroupProvider with API URL: " + apiUrl + ", Code Application: " + codeApplication);
         this.apiUrl = apiUrl;
         this.codeApplication = codeApplication;
         this.cache = PasseportPerimetreCache.getInstance();
@@ -43,6 +44,7 @@ public class PasseportGroupProvider implements GroupProvider {
                 
         // Configuration du TrustStore custom (pour l'autorité de certification IGCT)
         if (trustStorePath != null && !trustStorePath.isBlank()) {
+            log.fine("Trust store path provided: " + trustStorePath + ". Attempting to configure custom SSLContext.");
             try {
                 KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
                 char[] password = trustStorePassword != null ? trustStorePassword.toCharArray() : null;
@@ -67,17 +69,22 @@ public class PasseportGroupProvider implements GroupProvider {
         }
 
         this.httpClient = clientBuilder.build();
+        log.fine("PasseportGroupProvider initialization complete.");
     }
 
     @Override
     public Set<String> getGroups(String user) {
+        log.fine("getGroups called for user: '" + user + "'");
+        
         if (user == null || user.isBlank()) {
+            log.fine("User is null or blank. Returning empty set.");
             return Collections.emptySet();
         }
 
         try {
             // Construction de l'URL : https://api.passeport.ramage/s1sem/habilitations/{upn}/{code_application}
             String url = String.format("%s/%s/%s", apiUrl, user, codeApplication);
+            log.fine("Constructed Passeport API URL: " + url);
             
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -86,10 +93,15 @@ public class PasseportGroupProvider implements GroupProvider {
                     .GET()
                     .build();
 
+            log.fine("Sending GET request to Passeport API...");
+            long startTime = System.currentTimeMillis();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            long duration = System.currentTimeMillis() - startTime;
+            
+            log.fine("Received response from Passeport API with HTTP status code " + response.statusCode() + " in " + duration + "ms");
 
             if (response.statusCode() != 200) {
-                log.warning("Passeport API returned status " + response.statusCode() + " for user " + user);
+                log.warning("Passeport API returned status " + response.statusCode() + " for user " + user + ". Response body: " + response.body());
                 return Collections.emptySet();
             }
 
@@ -97,34 +109,45 @@ public class PasseportGroupProvider implements GroupProvider {
             List<String> perimetres = new ArrayList<>();
             
             // Parsing de la réponse JSON
+            log.fine("Parsing JSON response payload...");
             JsonNode root = mapper.readTree(response.body());
             
             // On suppose que l'API renvoie un tableau d'objets : [{"code_pa": "...", "perimetre": "..."}]
             if (root.isArray()) {
+                log.fine("JSON payload is an array with " + root.size() + " elements.");
                 for (JsonNode node : root) {
                     if (node.has("code_pa") && !node.get("code_pa").isNull()) {
-                        groups.add(node.get("code_pa").asText());
+                        String codePa = node.get("code_pa").asText();
+                        groups.add(codePa);
+                        log.finer("Extracted code_pa: " + codePa);
                     }
                     if (node.has("perimetre") && !node.get("perimetre").isNull()) {
                         // Ajouter seulement si non vide et non déjà présent pour éviter les doublons
                         String p = node.get("perimetre").asText();
                         if (!p.isBlank() && !perimetres.contains(p)) {
                             perimetres.add(p);
+                            log.finer("Extracted perimetre: " + p);
                         }
                     }
                 }
+            } else {
+                log.warning("Expected JSON array from Passeport API but received a different structure for user " + user);
             }
             
+            log.fine("Resolution complete for user " + user + ". Found " + groups.size() + " unique code_pa(s) and " + perimetres.size() + " unique perimetre(s).");
+            
             // 1. Mise à jour du cache partagé
+            log.fine("Updating PerimetreCache for user " + user + " with perimetres: " + perimetres);
             cache.updatePerimetre(user, perimetres);
             
             // 2. Retour des groupes à Trino/SEP
+            log.fine("Returning groups to Trino engine: " + groups);
             return groups;
             
         } catch (Exception e) {
             // Fail-closed : on catch toute erreur (réseau, timeout, parsing JSON)
             // On log et on retourne un set vide, sans propager l'exception pour ne pas casser la session.
-            log.log(Level.SEVERE, "Failed to fetch groups from Passeport for user " + user, e);
+            log.log(Level.SEVERE, "Failed to fetch groups from Passeport for user " + user + ". Applying fail-closed policy (returning empty groups).", e);
             return Collections.emptySet();
         }
     }
