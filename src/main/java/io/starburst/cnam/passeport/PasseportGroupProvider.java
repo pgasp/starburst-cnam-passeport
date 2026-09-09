@@ -30,14 +30,12 @@ public class PasseportGroupProvider implements GroupProvider {
     
     private final String apiUrl;
     private final String codeApplication;
-    private final PasseportPerimetreCache cache;
     private final HttpClient httpClient;
 
     public PasseportGroupProvider(String apiUrl, String codeApplication, String trustStorePath, String trustStorePassword) {
         log.fine("Initializing PasseportGroupProvider with API URL: " + apiUrl + ", Code Application: " + codeApplication);
         this.apiUrl = apiUrl;
         this.codeApplication = codeApplication;
-        this.cache = PasseportPerimetreCache.getInstance();
         
         HttpClient.Builder clientBuilder = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10));
@@ -80,6 +78,15 @@ public class PasseportGroupProvider implements GroupProvider {
             log.fine("User is null or blank. Returning empty set.");
             return Collections.emptySet();
         }
+
+        // 1. Vérifier si les droits sont déjà en cache
+        PasseportAuthCache.AuthData cachedData = PasseportAuthCache.getInstance().get(user);
+        if (cachedData != null) {
+            log.fine("CACHE HIT for user " + user + ". Returning " + cachedData.getGroups().size() + " groups and " + cachedData.getPerimetres().size() + " perimetres from cache.");
+            return cachedData.getGroups();
+        }
+
+        log.fine("CACHE MISS for user " + user + ". Calling Passeport API.");
 
         try {
             // Construction de l'URL : https://api.passeport.ramage/s1sem/habilitations/{upn}/{code_application}
@@ -136,11 +143,11 @@ public class PasseportGroupProvider implements GroupProvider {
             
             log.fine("Resolution complete for user " + user + ". Found " + groups.size() + " unique code_pa(s) and " + perimetres.size() + " unique perimetre(s).");
             
-            // 1. Mise à jour du cache partagé
-            log.fine("Updating PerimetreCache for user " + user + " with perimetres: " + perimetres);
-            cache.updatePerimetre(user, perimetres);
+            // 2. Mise à jour du cache partagé (Guava Cache - TTL 5min)
+            log.fine("Updating Guava Auth Cache for user " + user + " with perimetres: " + perimetres);
+            PasseportAuthCache.getInstance().put(user, groups, perimetres);
             
-            // 2. Retour des groupes à Trino/SEP
+            // 3. Retour des groupes à Trino/SEP
             log.fine("Returning groups to Trino engine: " + groups);
             return groups;
             

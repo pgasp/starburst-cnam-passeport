@@ -8,9 +8,10 @@ Il permet d'intégrer Starburst au système d'habilitation **Passeport** de la C
 
 Le plugin (`passeport-group-provider`) est packagé dans un seul `.jar` et expose deux points d'extension au moteur Starburst :
 
-1. **GroupProvider (`cnam-passeport`)** : Interroge l'API Passeport au moment du login (SSO) de l'utilisateur pour récupérer ses rôles (`code_pa`). Si l'API est indisponible, le plugin applique un modèle *Fail-Closed* (retourne 0 groupe, bloquant l'accès sans faire crasher le cluster).
+1. **GroupProvider (`cnam-passeport`)** : Interroge l'API Passeport au moment de l'activité de l'utilisateur pour récupérer ses rôles (`code_pa`). Si l'API est indisponible, le plugin applique un modèle *Fail-Closed* (retourne 0 groupe, bloquant l'accès sans faire crasher le cluster). Les appels sont optimisés via un cache interne avec un TTL de 15 minutes.
 2. **UDFs SQL (BIAC RLS)** : 
-   - `passeport_perimetre(varchar)` : UDF lisant un cache en mémoire (peuplé lors du login) pour renvoyer le périmètre autorisé (liste des caisses) de l'utilisateur courant.
+   - `passeport_perimetre()` : UDF lisant un cache en mémoire pour renvoyer le périmètre autorisé (liste des caisses) de l'utilisateur courant (via l'identité de session, méthode sécurisée).
+   - `passport_biac_roles()` : UDF de débogage et d'audit qui retourne la liste des rôles système (`enabledSystemRoles`) activés pour la session courante (renvoie une chaîne de caractères formatée).
    - `flush_passeport_cache(varchar)` : UDF d'administration permettant de purger le cache d'un utilisateur à chaud.
 
 ---
@@ -71,17 +72,27 @@ Dans les politiques BIAC, vous devez accorder le privilège `EXECUTE` sur la fon
 **B. Créer le Row Filter**
 Sur les tables ou vues contenant une colonne `caisse` (ex: `table_invalidite`), créez un Row Filter BIAC avec l'expression SQL suivante :
 ```sql
-caisse IN (passeport_perimetre(current_user))
+caisse IN (passeport_perimetre())
 ```
 
 Dès lors, chaque requête exécutée par un utilisateur sera dynamiquement filtrée pour ne renvoyer que les lignes correspondant aux caisses autorisées par Passeport pour cet utilisateur.
 
 ---
 
-## ⚙️ Administration et Opérations
+## ⚙️ Administration, Performances et Opérations
 
-### Invalidation du cache (Révocation)
-Pour révoquer les droits d'un utilisateur sans attendre l'expiration de sa session SSO, un administrateur Starburst peut exécuter l'UDF de flush directement depuis son client SQL (DBeaver, Trino CLI, etc.) :
+### Architecture et Performances (Cache Interne)
+Pour garantir de très hautes performances et éviter de surcharger l'API Passeport, le plugin implémente un cache interne très performant basé sur **Google Guava**. 
+
+Étant donné que l'architecture de Starburst est de type "Stateless", chaque requête SQL déclenche une vérification des groupes de l'utilisateur. Le comportement est le suivant :
+1. **CACHE MISS :** À la première requête d'un utilisateur, l'API Passeport est appelée (appel synchrone HTTP). Les habilitations sont stockées en mémoire.
+2. **CACHE HIT :** Pendant **15 minutes** (TTL configuré), toutes les requêtes suivantes de cet utilisateur utiliseront exclusivement la mémoire vive (0 milliseconde, 0 appel réseau).
+3. **Expiration :** Après 15 minutes, l'entrée expire silencieusement. La requête suivante déclenchera à nouveau un CACHE MISS pour actualiser les droits.
+
+Ce modèle garantit que des bombardements de requêtes (ex: tableaux de bord BI) n'impactent jamais l'infrastructure d'authentification de la CNAM.
+
+### Invalidation du cache (Révocation manuelle)
+Pour révoquer les droits d'un utilisateur *avant* la fin des 15 minutes du TTL, un administrateur Starburst peut exécuter l'UDF de flush directement depuis son client SQL (DBeaver, Trino CLI, etc.) :
 
 ```sql
 -- Vider le cache d'un utilisateur spécifique
