@@ -15,8 +15,14 @@ Ce document liste les évolutions envisagées pour le plugin `passeport-group-pr
 ## 3. Gestion Avancée du TrustStore (TLS/HTTPS)
 - **Certificats Internes (IGCT)** : Valider en conditions réelles la mécanique d'injection d'un TrustStore personnalisé (`passeport.trust-store-path`) dans le `java.net.http.HttpClient`, ce qui permet d'attaquer une API sécurisée par des certificats d'entreprise sans nécessiter la modification du `cacerts` global de la JVM Starburst.
 
-## 4. Arborescence des Périmètres (Logique Métier)
-- **Gestion de la hiérarchie CNAM** : Ajouter une logique spécifique dans la résolution des périmètres. Par exemple, si l'API retourne le code national (`000`), l'UDF pourrait renvoyer un marqueur spécial (`ALL`) ou générer la liste exhaustive des caisses régionales/locales, simplifiant grandement l'écriture des règles SQL BIAC.
+## 4. Arborescence des Périmètres & System Access Control (Recommandation Majeure)
+**Problématique :** Actuellement, le plugin s'appuie sur l'interface BIAC de Starburst via une UDF (`caisse IN (passeport_perimetre())`). Cette approche pose un problème majeur pour la hiérarchie CNAM (ex: un profil National avec le code `000`). Si la règle BIAC reste statique, une requête avec `caisse IN ('000')` ne renverra aucune donnée car les tables contiennent les codes de caisses réels (311, etc.).
 
-## 5. System Access Control (Row-Level Security Natif)
-- **Injection Automatique des Filtres** : Pour aller plus loin qu'un simple *Group Provider*, étendre ce plugin pour qu'il implémente l'interface `SystemAccessControl`. Cela permettrait d'injecter automatiquement la clause de filtrage `caisse IN (x, y)` directement dans le planificateur de requêtes de Starburst sur toutes les tables cibles, s'affranchissant ainsi de la création manuelle de règles BIAC avec l'UDF.
+**Solution préconisée (RLS Natif) :** 
+Transformer le plugin pour qu'il implémente l'interface `SystemAccessControl`. Cela permet d'injecter la Row-Level Security (RLS) directement dans le planificateur du moteur SQL via du code Java, sans configuration manuelle dans BIAC.
+
+**Avantages du SystemAccessControl :**
+- **Bypass Automatique (Performance maximale) :** Si le code Java détecte que l'utilisateur possède le périmètre `000`, il peut choisir de ne générer *aucun filtre* (`Optional.empty()`). Le profil National accède à toute la table sans le surcoût de la clause `IN`.
+- **Développement de Macros Régionales :** Le code Java peut facilement intercepter un macro-code (ex: `REG_BRETAGNE`) et générer la clause SQL étendue (`caisse IN ('351', '291', '221', '561')`).
+- **Administration Zéro :** Plus besoin de configurer manuellement le Row Filter sur des milliers de tables dans l'interface Starburst. L'injection est automatique et infaillible.
+- **Fail-Closed Natif :** Si l'utilisateur n'a aucun périmètre, le plugin injecte la condition `false`, garantissant qu'aucune ligne ne sera exposée, même si l'administrateur a oublié de configurer BIAC.
