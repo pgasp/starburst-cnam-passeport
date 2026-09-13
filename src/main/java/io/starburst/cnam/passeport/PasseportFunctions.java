@@ -18,26 +18,21 @@ public final class PasseportFunctions {
     private PasseportFunctions() {}
 
     @ScalarFunction("passeport_perimetre")
-    @Description("Returns the list of caisses (perimetre) for the current user")
-    @SqlType("array(varchar)")
-    public static Block getPasseportPerimetre(ConnectorSession session) {
+    @Description("Returns a comma-separated list of caisses (perimetre) for the current user")
+    @SqlType(StandardTypes.VARCHAR)
+    public static Slice getPasseportPerimetre(ConnectorSession session) {
         if (session == null || session.getUser() == null) {
-            return createEmptyArray();
+            return Slices.utf8Slice("");
         }
         
         String user = session.getUser();
         List<String> perimetres = PasseportPerimetreCache.getInstance().getPerimetre(user);
         
         if (perimetres == null || perimetres.isEmpty()) {
-            return createEmptyArray();
+            return Slices.utf8Slice("");
         }
         
-        BlockBuilder blockBuilder = VarcharType.VARCHAR.createBlockBuilder(null, perimetres.size());
-        for (String p : perimetres) {
-            VarcharType.VARCHAR.writeSlice(blockBuilder, Slices.utf8Slice(p));
-        }
-        
-        return blockBuilder.build();
+        return Slices.utf8Slice(String.join(",", perimetres));
     }
     
     @ScalarFunction("passport_biac_roles")
@@ -76,7 +71,5 @@ public final class PasseportFunctions {
         return true;
     }
     
-    private static Block createEmptyArray() {
-        return VarcharType.VARCHAR.createBlockBuilder(null, 0).build();
-    }
+
 }

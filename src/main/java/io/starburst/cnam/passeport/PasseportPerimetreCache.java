@@ -14,10 +14,6 @@ public class PasseportPerimetreCache {
         return INSTANCE;
     }
 
-    public void updatePerimetre(String upn, List<String> perimetres) {
-        // Obsolete (géré par PasseportAuthCache)
-    }
-
     public List<String> getPerimetre(String upn) {
         return PasseportAuthCache.getInstance().getPerimetres(upn);
     }

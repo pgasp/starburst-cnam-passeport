@@ -23,7 +23,7 @@ public class PasseportPerimetreCacheTest {
         String user = "agent1@cnam.fr";
         List<String> perimetres = Arrays.asList("311", "312");
 
-        cache.updatePerimetre(user, perimetres);
+        PasseportAuthCache.getInstance().put(user, Collections.emptySet(), perimetres);
 
         List<String> retrieved = cache.getPerimetre(user);
         assertEquals(2, retrieved.size());
@@ -40,8 +40,8 @@ public class PasseportPerimetreCacheTest {
 
     @Test
     public void testFlushSingleUser() {
-        cache.updatePerimetre("user1", Arrays.asList("111"));
-        cache.updatePerimetre("user2", Arrays.asList("222"));
+        PasseportAuthCache.getInstance().put("user1", Collections.emptySet(), Arrays.asList("111"));
+        PasseportAuthCache.getInstance().put("user2", Collections.emptySet(), Arrays.asList("222"));
 
         cache.flush("user1");
 
@@ -51,8 +51,8 @@ public class PasseportPerimetreCacheTest {
 
     @Test
     public void testFlushAll() {
-        cache.updatePerimetre("user1", Arrays.asList("111"));
-        cache.updatePerimetre("user2", Arrays.asList("222"));
+        PasseportAuthCache.getInstance().put("user1", Collections.emptySet(), Arrays.asList("111"));
+        PasseportAuthCache.getInstance().put("user2", Collections.emptySet(), Arrays.asList("222"));
 
         cache.flushAll();
 
@@ -62,8 +62,8 @@ public class PasseportPerimetreCacheTest {
 
     @Test
     public void testUpdateWithNullSafely() {
-        cache.updatePerimetre(null, Arrays.asList("111"));
-        cache.updatePerimetre("user1", null);
+        PasseportAuthCache.getInstance().put(null, Collections.emptySet(), Arrays.asList("111"));
+        PasseportAuthCache.getInstance().put("user1", Collections.emptySet(), null);
 
         assertTrue(cache.getPerimetre(null).isEmpty());
         assertTrue(cache.getPerimetre("user1").isEmpty());

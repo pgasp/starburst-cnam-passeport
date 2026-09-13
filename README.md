@@ -72,8 +72,9 @@ Dans les politiques BIAC, vous devez accorder le privilège `EXECUTE` sur la fon
 **B. Créer le Row Filter**
 Sur les tables ou vues contenant une colonne `caisse` (ex: `table_invalidite`), créez un Row Filter BIAC avec l'expression SQL suivante :
 ```sql
-caisse IN (passeport_perimetre())
+contains(passeport_perimetre(), caisse)
 ```
+*(L'alternative `caisse = ANY(passeport_perimetre())` fonctionne également)*
 
 Dès lors, chaque requête exécutée par un utilisateur sera dynamiquement filtrée pour ne renvoyer que les lignes correspondant aux caisses autorisées par Passeport pour cet utilisateur.
 
