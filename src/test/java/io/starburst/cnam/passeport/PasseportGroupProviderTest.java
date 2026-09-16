@@ -33,7 +33,10 @@ public class PasseportGroupProviderTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("[{\"code_pa\": \"ROLE_A\", \"perimetre\": \"311\"}, {\"code_pa\": \"ROLE_B\", \"perimetre\": \"312\"}, {\"code_pa\": \"ROLE_A\", \"perimetre\": \"311\"}]"))); // Also testing deduplication
 
-        PasseportGroupProvider provider = new PasseportGroupProvider(wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", app, null, null);
+        PasseportGroupProvider provider = new PasseportGroupProvider(
+                wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
+                app, null, null, 
+                true, "jdbc:trino://localhost:8080", "passeport_writer", "", "system", "passeport", "user_perimetre");
 
         Set<String> groups = provider.getGroups(user);
 
@@ -56,7 +59,10 @@ public class PasseportGroupProviderTest {
         stubFor(get(urlEqualTo("/s1sem/habilitations/" + user + "/" + app))
                 .willReturn(aResponse().withStatus(500)));
 
-        PasseportGroupProvider provider = new PasseportGroupProvider(wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", app, null, null);
+        PasseportGroupProvider provider = new PasseportGroupProvider(
+                wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
+                app, null, null, 
+                false, "", "", "", "system", "passeport", "user_perimetre");
 
         Set<String> groups = provider.getGroups(user);
 
@@ -75,7 +81,10 @@ public class PasseportGroupProviderTest {
                         .withStatus(200)
                         .withFixedDelay(16000))); // Simulate a timeout > 15s
 
-        PasseportGroupProvider provider = new PasseportGroupProvider(wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", app, null, null);
+        PasseportGroupProvider provider = new PasseportGroupProvider(
+                wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
+                app, null, null, 
+                false, "", "", "", "system", "passeport", "user_perimetre");
 
         Set<String> groups = provider.getGroups(user);
 
@@ -93,7 +102,10 @@ public class PasseportGroupProviderTest {
                         .withStatus(200)
                         .withBody("This is not JSON")));
 
-        PasseportGroupProvider provider = new PasseportGroupProvider(wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", app, null, null);
+        PasseportGroupProvider provider = new PasseportGroupProvider(
+                wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
+                app, null, null, 
+                false, "", "", "", "system", "passeport", "user_perimetre");
 
         Set<String> groups = provider.getGroups(user);
 
@@ -102,8 +114,34 @@ public class PasseportGroupProviderTest {
     
     @Test
     public void testEmptyOrNullUser() {
-        PasseportGroupProvider provider = new PasseportGroupProvider("http://localhost", "MATIS", null, null);
+        PasseportGroupProvider provider = new PasseportGroupProvider("http://localhost", "MATIS", null, null, 
+                false, "", "", "", "system", "passeport", "user_perimetre");
         assertTrue(provider.getGroups(null).isEmpty());
         assertTrue(provider.getGroups("").isEmpty());
+    }
+
+    @Test
+    public void testFactoryThrowsOnMissingJdbcConfigWhenWriteEnabled() {
+        PasseportGroupProviderFactory factory = new PasseportGroupProviderFactory();
+        java.util.Map<String, String> config = new java.util.HashMap<>();
+        config.put("passeport.enable-perimetre-write", "true");
+        // No jdbc-url or jdbc-user provided
+        
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            factory.create(config);
+        });
+        
+        assertTrue(exception.getMessage().contains("passeport.enable-perimetre-write=true requires passeport.jdbc-url and passeport.jdbc-user to be set"));
+    }
+
+    @Test
+    public void testFactorySucceedsWhenWriteDisabledAndNoJdbcConfig() {
+        PasseportGroupProviderFactory factory = new PasseportGroupProviderFactory();
+        java.util.Map<String, String> config = new java.util.HashMap<>();
+        config.put("passeport.enable-perimetre-write", "false");
+        
+        assertDoesNotThrow(() -> {
+            factory.create(config);
+        });
     }
 }

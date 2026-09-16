@@ -20,6 +20,11 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.Properties;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -31,8 +36,27 @@ public class PasseportGroupProvider implements GroupProvider {
     private final String apiUrl;
     private final String codeApplication;
     private final HttpClient httpClient;
+    
+    private final boolean enablePerimetreWrite;
+    private final String jdbcUrl;
+    private final String jdbcUser;
+    private final String jdbcPassword;
+    private final String perimetreCatalog;
+    private final String perimetreSchema;
+    private final String perimetreTable;
 
-    public PasseportGroupProvider(String apiUrl, String codeApplication, String trustStorePath, String trustStorePassword) {
+    public PasseportGroupProvider(
+            String apiUrl, 
+            String codeApplication, 
+            String trustStorePath, 
+            String trustStorePassword,
+            boolean enablePerimetreWrite,
+            String jdbcUrl,
+            String jdbcUser,
+            String jdbcPassword,
+            String perimetreCatalog,
+            String perimetreSchema,
+            String perimetreTable) {
         log.fine("Initializing PasseportGroupProvider with API URL: " + apiUrl + ", Code Application: " + codeApplication);
         this.apiUrl = apiUrl;
         this.codeApplication = codeApplication;
@@ -67,6 +91,15 @@ public class PasseportGroupProvider implements GroupProvider {
         }
 
         this.httpClient = clientBuilder.build();
+        
+        this.enablePerimetreWrite = enablePerimetreWrite;
+        this.jdbcUrl = jdbcUrl;
+        this.jdbcUser = jdbcUser;
+        this.jdbcPassword = jdbcPassword;
+        this.perimetreCatalog = perimetreCatalog;
+        this.perimetreSchema = perimetreSchema;
+        this.perimetreTable = perimetreTable;
+        
         log.fine("PasseportGroupProvider initialization complete.");
     }
 
@@ -114,6 +147,7 @@ public class PasseportGroupProvider implements GroupProvider {
 
             Set<String> groups = new HashSet<>();
             List<String> perimetres = new ArrayList<>();
+            List<PerimetreRecord> records = new ArrayList<>();
             
             // Parsing de la réponse JSON
             log.fine("Parsing JSON response payload...");
@@ -123,18 +157,25 @@ public class PasseportGroupProvider implements GroupProvider {
             if (root.isArray()) {
                 log.fine("JSON payload is an array with " + root.size() + " elements.");
                 for (JsonNode node : root) {
+                    String codePa = null;
+                    String p = null;
+                    
                     if (node.has("code_pa") && !node.get("code_pa").isNull()) {
-                        String codePa = node.get("code_pa").asText();
+                        codePa = node.get("code_pa").asText();
                         groups.add(codePa);
                         log.finer("Extracted code_pa: " + codePa);
                     }
                     if (node.has("perimetre") && !node.get("perimetre").isNull()) {
                         // Ajouter seulement si non vide et non déjà présent pour éviter les doublons
-                        String p = node.get("perimetre").asText();
+                        p = node.get("perimetre").asText();
                         if (!p.isBlank() && !perimetres.contains(p)) {
                             perimetres.add(p);
                             log.finer("Extracted perimetre: " + p);
                         }
+                    }
+                    
+                    if (codePa != null && p != null && !p.isBlank()) {
+                        records.add(new PerimetreRecord(codePa, p));
                     }
                 }
             } else {
@@ -142,6 +183,18 @@ public class PasseportGroupProvider implements GroupProvider {
             }
             
             log.fine("Resolution complete for user " + user + ". Found " + groups.size() + " unique code_pa(s) and " + perimetres.size() + " unique perimetre(s).");
+            
+            // Écriture JDBC fail-closed (périmètre uniquement) AVANT la mise en cache
+            if (enablePerimetreWrite) {
+                try {
+                    writePerimetresToDb(user, records);
+                } catch (SQLException e) {
+                    log.log(Level.SEVERE, "Failed to write perimetres for user " + user + ". The user will have their groups but NO perimetres (RLS fail-closed).", e);
+                    // On ne throw PAS l'exception pour permettre la remontée des groupes.
+                }
+            } else {
+                log.fine("passeport.enable-perimetre-write=false. JDBC writing skipped for user " + user);
+            }
             
             // 2. Mise à jour du cache partagé (Guava Cache - TTL 5min)
             log.fine("Updating Guava Auth Cache for user " + user + " with perimetres: " + perimetres);
@@ -156,6 +209,59 @@ public class PasseportGroupProvider implements GroupProvider {
             // On log et on retourne un set vide, sans propager l'exception pour ne pas casser la session.
             log.log(Level.SEVERE, "Failed to fetch groups from Passeport for user " + user + ". Applying fail-closed policy (returning empty groups).", e);
             return Collections.emptySet();
+        }
+    }
+    
+    private void writePerimetresToDb(String user, List<PerimetreRecord> records) throws SQLException {
+        log.fine("Writing perimetres to Trino via JDBC for user " + user);
+        
+        Properties props = new Properties();
+        props.setProperty("user", jdbcUser);
+        if (jdbcPassword != null && !jdbcPassword.isEmpty()) {
+            props.setProperty("password", jdbcPassword);
+        }
+        
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, props)) {
+            conn.setAutoCommit(false); // Enable transaction for delete + insert
+            
+            String fullTableName = perimetreCatalog + "." + perimetreSchema + "." + perimetreTable;
+            
+            // Delete existing records for the user
+            String deleteSql = "DELETE FROM " + fullTableName + " WHERE upn = ?";
+            try (PreparedStatement deleteStmt = conn.prepareStatement(deleteSql)) {
+                deleteStmt.setString(1, user);
+                deleteStmt.executeUpdate();
+            }
+            
+            // Insert new records
+            if (!records.isEmpty()) {
+                String insertSql = "INSERT INTO " + fullTableName + " (upn, code_pa, perimetre) VALUES (?, ?, ?)";
+                try (PreparedStatement insertStmt = conn.prepareStatement(insertSql)) {
+                    for (PerimetreRecord record : records) {
+                        insertStmt.setString(1, user);
+                        insertStmt.setString(2, record.codePa);
+                        insertStmt.setString(3, record.perimetre);
+                        insertStmt.addBatch();
+                    }
+                    insertStmt.executeBatch();
+                }
+            }
+            
+            conn.commit();
+            log.fine("Successfully wrote " + records.size() + " perimetres to DB for user " + user);
+        } catch (SQLException e) {
+            log.log(Level.SEVERE, "JDBC Error while writing perimetres for user " + user, e);
+            throw e; // will be caught in the main block and logged without breaking group resolution
+        }
+    }
+    
+    private static class PerimetreRecord {
+        final String codePa;
+        final String perimetre;
+        
+        PerimetreRecord(String codePa, String perimetre) {
+            this.codePa = codePa;
+            this.perimetre = perimetre;
         }
     }
 }

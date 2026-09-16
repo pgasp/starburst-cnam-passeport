@@ -18,6 +18,32 @@ public class PasseportGroupProviderFactory implements GroupProviderFactory {
         String trustStorePath = config.get("passeport.trust-store-path");
         String trustStorePassword = config.get("passeport.trust-store-password");
         
-        return new PasseportGroupProvider(apiUrl, codeApplication, trustStorePath, trustStorePassword);
+        boolean enablePerimetreWrite = Boolean.parseBoolean(config.getOrDefault("passeport.enable-perimetre-write", "false"));
+        String jdbcUrl = config.getOrDefault("passeport.jdbc-url", "");
+        String jdbcUser = config.getOrDefault("passeport.jdbc-user", "");
+        String jdbcPassword = config.getOrDefault("passeport.jdbc-password", "");
+        String perimetreCatalog = config.getOrDefault("passeport.perimetre-catalog", "system");
+        String perimetreSchema = config.getOrDefault("passeport.perimetre-schema", "passeport");
+        String perimetreTable = config.getOrDefault("passeport.perimetre-table", "user_perimetre");
+
+        if (enablePerimetreWrite) {
+            if (jdbcUrl == null || jdbcUrl.isBlank() || jdbcUser == null || jdbcUser.isBlank()) {
+                throw new IllegalArgumentException("passeport.enable-perimetre-write=true requires passeport.jdbc-url and passeport.jdbc-user to be set");
+            }
+        }
+
+        return new PasseportGroupProvider(
+                apiUrl, 
+                codeApplication, 
+                trustStorePath, 
+                trustStorePassword,
+                enablePerimetreWrite,
+                jdbcUrl,
+                jdbcUser,
+                jdbcPassword,
+                perimetreCatalog,
+                perimetreSchema,
+                perimetreTable
+        );
     }
 }
