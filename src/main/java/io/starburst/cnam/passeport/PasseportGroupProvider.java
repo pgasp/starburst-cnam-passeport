@@ -222,7 +222,7 @@ public class PasseportGroupProvider implements GroupProvider {
     }
     
     private void writePerimetresToDb(String user, List<PerimetreRecord> records) throws SQLException {
-        log.fine("Writing perimetres to Trino via JDBC for user " + user);
+        log.fine("Writing perimetres to Trino/PostgreSQL via JDBC for user " + user);
         
         Properties props = new Properties();
         props.setProperty("user", jdbcUser);
@@ -230,9 +230,10 @@ public class PasseportGroupProvider implements GroupProvider {
             props.setProperty("password", jdbcPassword);
         }
         
+        boolean isPostgres = jdbcUrl != null && jdbcUrl.startsWith("jdbc:postgresql:");
         try {
             // Check JDBC URL to load the appropriate driver
-            if (jdbcUrl != null && jdbcUrl.startsWith("jdbc:postgresql:")) {
+            if (isPostgres) {
                 Class.forName("org.postgresql.Driver");
             } else {
                 Class.forName("io.trino.jdbc.TrinoDriver");
@@ -243,16 +244,26 @@ public class PasseportGroupProvider implements GroupProvider {
         }
         
         try (Connection conn = DriverManager.getConnection(jdbcUrl, props)) {
-            conn.setAutoCommit(false); // Enable transaction for delete + insert
-            
             String fullTableName;
-            if (jdbcUrl != null && jdbcUrl.startsWith("jdbc:postgresql:")) {
-                // PostgreSQL expects schema.table (catalog/database is in the JDBC URL)
+            if (isPostgres) {
+                // PostgreSQL expects schema.table
                 fullTableName = perimetreSchema + "." + perimetreTable;
+                
+                // Auto-create schema and table if they do not exist
+                try (java.sql.Statement stmt = conn.createStatement()) {
+                    stmt.execute("CREATE SCHEMA IF NOT EXISTS " + perimetreSchema);
+                    stmt.execute("CREATE TABLE IF NOT EXISTS " + fullTableName + " (" +
+                            "upn VARCHAR(255) NOT NULL, " +
+                            "code_pa VARCHAR(100) NOT NULL, " +
+                            "perimetre VARCHAR(50) NOT NULL" +
+                            ")");
+                }
             } else {
                 // Trino expects catalog.schema.table
                 fullTableName = perimetreCatalog + "." + perimetreSchema + "." + perimetreTable;
             }
+            
+            conn.setAutoCommit(false); // Enable transaction for delete + insert
             
             // Delete existing records for the user
             String deleteSql = "DELETE FROM " + fullTableName + " WHERE upn = ?";
