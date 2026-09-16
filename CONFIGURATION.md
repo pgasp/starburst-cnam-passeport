@@ -58,7 +58,7 @@ passeport.enable-perimetre-write=false
 ```
 
 ### Mode B : Groupes + RLS Dynamique (Recommandé)
-Si vous activez le RLS, le Group Provider doit écrire les périmètres en base à chaque connexion. Configurez les accès JDBC :
+Si vous activez le RLS, le Group Provider doit écrire les périmètres en base à chaque connexion. Pour éviter les dépendances cycliques avec Trino, connectez-vous directement à la base PostgreSQL sous-jacente :
 
 ```properties
 group-provider.name=cnam-passeport
@@ -68,12 +68,12 @@ passeport.api-url=https://api.passeport.ramage/s1sem/habilitations
 # Activation de l'écriture
 passeport.enable-perimetre-write=true
 
-# Configuration JDBC (Connexion au coordinateur lui-même)
-passeport.jdbc-url=jdbc:trino://localhost:8080
+# Configuration JDBC (Connexion DIRECTE à la base PostgreSQL sous-jacente)
+passeport.jdbc-url=jdbc:postgresql://postgres-host:5432/votre_base
 passeport.jdbc-user=passeport_writer
 passeport.jdbc-password=votre_mot_de_passe
 
-# Cible d'écriture
+# Cible d'écriture (utilisée par Trino pour le RLS, PostgreSQL utilisera uniquement schema.table)
 passeport.perimetre-catalog=system
 passeport.perimetre-schema=passeport
 passeport.perimetre-table=user_perimetre

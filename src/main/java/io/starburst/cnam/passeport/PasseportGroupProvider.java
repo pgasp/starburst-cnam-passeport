@@ -231,17 +231,28 @@ public class PasseportGroupProvider implements GroupProvider {
         }
         
         try {
-            // Force le chargement du driver JDBC Trino dans le classloader du plugin
-            Class.forName("io.trino.jdbc.TrinoDriver");
+            // Check JDBC URL to load the appropriate driver
+            if (jdbcUrl != null && jdbcUrl.startsWith("jdbc:postgresql:")) {
+                Class.forName("org.postgresql.Driver");
+            } else {
+                Class.forName("io.trino.jdbc.TrinoDriver");
+            }
         } catch (ClassNotFoundException e) {
-            log.log(Level.SEVERE, "Trino JDBC Driver not found in plugin classpath!", e);
-            throw new SQLException("Trino JDBC Driver not found", e);
+            log.log(Level.SEVERE, "JDBC Driver not found in plugin classpath!", e);
+            throw new SQLException("JDBC Driver not found", e);
         }
         
         try (Connection conn = DriverManager.getConnection(jdbcUrl, props)) {
             conn.setAutoCommit(false); // Enable transaction for delete + insert
             
-            String fullTableName = perimetreCatalog + "." + perimetreSchema + "." + perimetreTable;
+            String fullTableName;
+            if (jdbcUrl != null && jdbcUrl.startsWith("jdbc:postgresql:")) {
+                // PostgreSQL expects schema.table (catalog/database is in the JDBC URL)
+                fullTableName = perimetreSchema + "." + perimetreTable;
+            } else {
+                // Trino expects catalog.schema.table
+                fullTableName = perimetreCatalog + "." + perimetreSchema + "." + perimetreTable;
+            }
             
             // Delete existing records for the user
             String deleteSql = "DELETE FROM " + fullTableName + " WHERE upn = ?";

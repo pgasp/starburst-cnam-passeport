@@ -6,7 +6,7 @@
 
     <groupId>io.starburst.cnam</groupId>
     <artifactId>passeport-group-provider</artifactId>
-    <version>1.1.3</version>
+    <version>1.1.4</version>
     <packaging>trino-plugin</packaging>
 
     <properties>
@@ -46,6 +46,12 @@
             <groupId>io.trino</groupId>
             <artifactId>trino-jdbc</artifactId>
             <version>${trino.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.2</version>
         </dependency>
 
         <!-- Test Dependencies -->
