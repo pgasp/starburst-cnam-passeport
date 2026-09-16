@@ -249,9 +249,8 @@ public class PasseportGroupProvider implements GroupProvider {
                 // PostgreSQL expects schema.table
                 fullTableName = perimetreSchema + "." + perimetreTable;
                 
-                // Auto-create schema and table if they do not exist
+                // Auto-create table if it does not exist (schema creation removed per guidelines)
                 try (java.sql.Statement stmt = conn.createStatement()) {
-                    stmt.execute("CREATE SCHEMA IF NOT EXISTS " + perimetreSchema);
                     stmt.execute("CREATE TABLE IF NOT EXISTS " + fullTableName + " (" +
                             "upn VARCHAR(255) NOT NULL, " +
                             "code_pa VARCHAR(100) NOT NULL, " +

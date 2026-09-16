@@ -38,7 +38,6 @@ passeport.jdbc-password=...
 # Définition de la table cible (doit correspondre à celle du SystemAccessControl)
 passeport.perimetre-catalog=system
 passeport.perimetre-schema=passeport
-passeport.perimetre-table=user_perimetre
 ```
 
 **⚠️ Point de vigilance :** La table cible (`catalog`, `schema`, `table`) est configurée *manuellement* dans deux fichiers de propriétés différents s'ils sont séparés (`etc/group-provider.properties` et `etc/passeport-access-control.properties`). Vous devez vous assurer que les trois valeurs correspondent exactement entre les deux configurations.

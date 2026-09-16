@@ -76,7 +76,6 @@ passeport.jdbc-password=votre_mot_de_passe
 # Cible d'écriture (utilisée par Trino pour le RLS, PostgreSQL utilisera uniquement schema.table)
 passeport.perimetre-catalog=system
 passeport.perimetre-schema=passeport
-passeport.perimetre-table=user_perimetre
 ```
 
 ---
@@ -99,7 +98,6 @@ passeport.row-filter-mappings=iceberg.coeurdata.vact:caiexe_act,iceberg.coeurdat
 # Cible de lecture (⚠️ Doit être STRICTEMENT identique à la config du Group Provider)
 passeport.perimetre-catalog=system
 passeport.perimetre-schema=passeport
-passeport.perimetre-table=user_perimetre
 ```
 
 ### 4.2. Chaînage avec BIAC (Coordinateur)

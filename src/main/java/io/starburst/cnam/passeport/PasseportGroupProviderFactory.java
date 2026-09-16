@@ -24,7 +24,7 @@ public class PasseportGroupProviderFactory implements GroupProviderFactory {
         String jdbcPassword = config.getOrDefault("passeport.jdbc-password", "");
         String perimetreCatalog = config.getOrDefault("passeport.perimetre-catalog", "system");
         String perimetreSchema = config.getOrDefault("passeport.perimetre-schema", "passeport");
-        String perimetreTable = config.getOrDefault("passeport.perimetre-table", "user_perimetre");
+        String perimetreTable = "user_perimetre"; // Hardcodé selon les conventions
 
         if (enablePerimetreWrite) {
             if (jdbcUrl == null || jdbcUrl.isBlank() || jdbcUser == null || jdbcUser.isBlank()) {
