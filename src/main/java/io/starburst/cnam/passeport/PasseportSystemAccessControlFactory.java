@@ -18,7 +18,7 @@ public class PasseportSystemAccessControlFactory implements SystemAccessControlF
     }
 
     @Override
-    public SystemAccessControl create(Map<String, String> config) {
+    public SystemAccessControl create(Map<String, String> config, SystemAccessControlFactory.SystemAccessControlContext context) {
         // Lecture de la configuration : passeport.row-filter-mappings
         // Format attendu: catalog.schema.table1:colonne1,catalog.schema.table2:colonne2
         String mappingsConfig = config.getOrDefault("passeport.row-filter-mappings", "");
