@@ -121,6 +121,22 @@ public class PasseportGroupProviderTest {
     }
 
     @Test
+    public void testCyclicalDependencyBreaker(WireMockRuntimeInfo wmRuntimeInfo) {
+        String serviceAccount = "passeport_writer";
+        PasseportGroupProvider provider = new PasseportGroupProvider(
+                wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
+                "MATIS", null, null, 
+                true, "jdbc:trino://localhost:8080", serviceAccount, "", "system", "passeport", "user_perimetre");
+
+        // The call should return empty set immediately without hitting the API or throwing JDBC exceptions
+        Set<String> groups = provider.getGroups(serviceAccount);
+        assertTrue(groups.isEmpty());
+        
+        // Verify no API calls were made for the service account
+        verify(0, getRequestedFor(urlEqualTo("/s1sem/habilitations/" + serviceAccount + "/MATIS")));
+    }
+
+    @Test
     public void testFactoryThrowsOnMissingJdbcConfigWhenWriteEnabled() {
         PasseportGroupProviderFactory factory = new PasseportGroupProviderFactory();
         java.util.Map<String, String> config = new java.util.HashMap<>();

@@ -112,6 +112,15 @@ public class PasseportGroupProvider implements GroupProvider {
             return Collections.emptySet();
         }
 
+        // --- CYCLICAL DEPENDENCY BREAKER ---
+        // Si l'utilisateur courant est le compte de service utilisé pour écrire en base,
+        // on retourne immédiatement un set vide pour éviter une boucle infinie de connexions :
+        // getGroups(user) -> JDBC(passeport_writer) -> getGroups(passeport_writer) -> JDBC(passeport_writer)...
+        if (enablePerimetreWrite && user.equals(jdbcUser)) {
+            log.fine("Cyclical dependency breaker: bypassing Passeport API and JDBC write for service account '" + user + "'");
+            return Collections.emptySet();
+        }
+
         // 1. Vérifier si les droits sont déjà en cache
         PasseportAuthCache.AuthData cachedData = PasseportAuthCache.getInstance().get(user);
         if (cachedData != null) {
