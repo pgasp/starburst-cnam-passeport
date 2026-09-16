@@ -221,6 +221,14 @@ public class PasseportGroupProvider implements GroupProvider {
             props.setProperty("password", jdbcPassword);
         }
         
+        try {
+            // Force le chargement du driver JDBC Trino dans le classloader du plugin
+            Class.forName("io.trino.jdbc.TrinoDriver");
+        } catch (ClassNotFoundException e) {
+            log.log(Level.SEVERE, "Trino JDBC Driver not found in plugin classpath!", e);
+            throw new SQLException("Trino JDBC Driver not found", e);
+        }
+        
         try (Connection conn = DriverManager.getConnection(jdbcUrl, props)) {
             conn.setAutoCommit(false); // Enable transaction for delete + insert
             
