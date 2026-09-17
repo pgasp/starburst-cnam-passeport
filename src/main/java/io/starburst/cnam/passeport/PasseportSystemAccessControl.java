@@ -9,6 +9,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import io.trino.spi.StandardErrorCode;
+import java.util.Locale;
+import io.trino.spi.TrinoException;
 import io.trino.spi.security.TrinoPrincipal;
 import io.trino.spi.security.Privilege;
 import io.trino.spi.type.Type;
@@ -62,7 +65,6 @@ public class PasseportSystemAccessControl implements SystemAccessControl {
                     .expression(expression)
                     .build());
         }
-        
         return Collections.emptyList();
     }
 
@@ -215,11 +217,23 @@ public class PasseportSystemAccessControl implements SystemAccessControl {
         // Allow by default
     }
     @Override
+    public void checkCanSelectFromColumns(SystemSecurityContext context, CatalogSchemaTableName table, Optional<String> branch, Set<String> columns) {
+        // Allow by default
+    }
+    @Override
     public void checkCanSelectFromColumns(SystemSecurityContext context, CatalogSchemaTableName table, Set<String> columns) {
         // Allow by default
     }
     @Override
+    public void checkCanInsertIntoTable(SystemSecurityContext context, CatalogSchemaTableName table, Optional<String> branch) {
+        // Allow by default
+    }
+    @Override
     public void checkCanInsertIntoTable(SystemSecurityContext context, CatalogSchemaTableName table) {
+        // Allow by default
+    }
+    @Override
+    public void checkCanDeleteFromTable(SystemSecurityContext context, CatalogSchemaTableName table, Optional<String> branch) {
         // Allow by default
     }
     @Override
@@ -228,6 +242,10 @@ public class PasseportSystemAccessControl implements SystemAccessControl {
     }
     @Override
     public void checkCanTruncateTable(SystemSecurityContext context, CatalogSchemaTableName table) {
+        // Allow by default
+    }
+    @Override
+    public void checkCanUpdateTableColumns(SystemSecurityContext securityContext, CatalogSchemaTableName table, Optional<String> branch, Set<String> updatedColumnNames) {
         // Allow by default
     }
     @Override
@@ -247,7 +265,19 @@ public class PasseportSystemAccessControl implements SystemAccessControl {
         // Allow by default
     }
     @Override
+    public void checkCanRefreshView(SystemSecurityContext context, CatalogSchemaTableName viewName) {
+        // Allow by default
+    }
+    @Override
+    public void checkCanSetMaterializedViewAuthorization(SystemSecurityContext context, CatalogSchemaTableName view, TrinoPrincipal principal) {
+        // Allow by default
+    }
+    @Override
     public void checkCanDropView(SystemSecurityContext context, CatalogSchemaTableName view) {
+        // Allow by default
+    }
+    @Override
+    public void checkCanCreateViewWithSelectFromColumns(SystemSecurityContext context, CatalogSchemaTableName table, Optional<String> branch, Set<String> columns) {
         // Allow by default
     }
     @Override
@@ -300,6 +330,18 @@ public class PasseportSystemAccessControl implements SystemAccessControl {
     }
     @Override
     public void checkCanRevokeTablePrivilege(SystemSecurityContext context, Privilege privilege, CatalogSchemaTableName table, TrinoPrincipal revokee, boolean grantOption) {
+        // Allow by default
+    }
+    @Override
+    public void checkCanGrantTableBranchPrivilege(SystemSecurityContext context, Privilege privilege, CatalogSchemaTableName table, String branchName, TrinoPrincipal grantee, boolean grantOption) {
+        // Allow by default
+    }
+    @Override
+    public void checkCanDenyTableBranchPrivilege(SystemSecurityContext context, Privilege privilege, CatalogSchemaTableName table, String branchName, TrinoPrincipal grantee) {
+        // Allow by default
+    }
+    @Override
+    public void checkCanRevokeTableBranchPrivilege(SystemSecurityContext context, Privilege privilege, CatalogSchemaTableName table, String branchName, TrinoPrincipal revokee, boolean grantOption) {
         // Allow by default
     }
     @Override
@@ -379,8 +421,28 @@ public class PasseportSystemAccessControl implements SystemAccessControl {
         // Allow by default
     }
     @Override
+    public void checkCanShowBranches(SystemSecurityContext systemSecurityContext, CatalogSchemaTableName tableName) {
+        // Allow by default
+    }
+    @Override
+    public void checkCanCreateBranch(SystemSecurityContext systemSecurityContext, CatalogSchemaTableName tableName, String branchName) {
+        // Allow by default
+    }
+    @Override
+    public void checkCanDropBranch(SystemSecurityContext systemSecurityContext, CatalogSchemaTableName tableName, String branchName) {
+        // Allow by default
+    }
+    @Override
+    public void checkCanFastForwardBranch(SystemSecurityContext systemSecurityContext, CatalogSchemaTableName tableName, String sourceBranchName, String targetBranchName) {
+        // Allow by default
+    }
+    @Override
     public Optional<ViewExpression> getColumnMask(SystemSecurityContext context, CatalogSchemaTableName tableName, String columnName, Type type) {
         return Optional.empty();
+    }
+    @Override
+    public void checkCanSetEntityAuthorization(SystemSecurityContext context, EntityKindAndName entityKindAndName, TrinoPrincipal principal) {
+        // Allow by default
     }
     @Override
     public Iterable<EventListener> getEventListeners() {
