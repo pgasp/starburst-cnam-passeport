@@ -15,6 +15,9 @@ public final class CryptoFunctions {
     @SqlNullable
     @SqlType(StandardTypes.VARCHAR)
     public static String decryptAssmac(@SqlType(StandardTypes.VARCHAR) String ciphertext) {
+        if (ciphertext == null) {
+            return null;
+        }
         try {
             return AssmacCipher.decrypt(ciphertext);
         } catch (Exception e) {
