@@ -60,9 +60,10 @@ public class PasseportSystemAccessControl implements SystemAccessControl {
                 expression = String.format("%s IN (%s)", filterColumn, inList);
             }
             
-            // Le filtre s'exécute sous l'identité de l'utilisateur courant, 
-            // en ne spécifiant pas d'identité on conserve les rôles actifs (Invoker rights)
+            // Le filtre s'exécute sous l'identité du compte de service (Definer rights) 
+            // pour éviter le blocage BIAC lié à la perte de contexte des rôles.
             return Collections.singletonList(ViewExpression.builder()
+                    .identity("starburst_service")
                     .expression(expression)
                     .build());
         }
