@@ -4,6 +4,7 @@ import io.trino.spi.connector.CatalogSchemaTableName;
 import io.trino.spi.security.SystemAccessControl;
 import io.trino.spi.security.SystemAccessControlFactory;
 
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -50,6 +51,22 @@ public class PasseportSystemAccessControlFactory implements SystemAccessControlF
         // Configuration obsolète mais conservée pour éviter des erreurs au démarrage si présente dans le fichier
         config.getOrDefault("passeport.perimetre-catalog", "system");
         config.getOrDefault("passeport.perimetre-schema", "passeport");
+
+        // Clé AES-256 (base64, 32 octets bruts) pour decrypt_assmac(). Optionnelle : si absente,
+        // la fonction decrypt_assmac() échouera (fail-closed, retourne NULL) faute de clé.
+        String assmacEncryptionKey = config.getOrDefault("passeport.assmac-encryption-key", "");
+        if (!assmacEncryptionKey.isEmpty()) {
+            byte[] rawKey;
+            try {
+                rawKey = Base64.getDecoder().decode(assmacEncryptionKey);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("passeport.assmac-encryption-key must be valid base64", e);
+            }
+            if (rawKey.length != 32) {
+                throw new IllegalArgumentException("passeport.assmac-encryption-key must decode to exactly 32 bytes (AES-256), got " + rawKey.length);
+            }
+            AssmacCipher.setKey(rawKey);
+        }
 
         return new PasseportSystemAccessControl(rowFilterMappings, serviceAccount);
     }

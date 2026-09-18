@@ -35,8 +35,7 @@ public class PasseportGroupProviderTest {
 
         PasseportGroupProvider provider = new PasseportGroupProvider(
                 wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
-                app, null, null, 
-                true, "jdbc:trino://localhost:8080", "passeport_writer", "", "system", "passeport", "user_perimetre");
+                app, null, null);
 
         Set<String> groups = provider.getGroups(user);
 
@@ -61,8 +60,7 @@ public class PasseportGroupProviderTest {
 
         PasseportGroupProvider provider = new PasseportGroupProvider(
                 wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
-                app, null, null, 
-                false, "", "", "", "system", "passeport", "user_perimetre");
+                app, null, null);
 
         Set<String> groups = provider.getGroups(user);
 
@@ -83,8 +81,7 @@ public class PasseportGroupProviderTest {
 
         PasseportGroupProvider provider = new PasseportGroupProvider(
                 wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
-                app, null, null, 
-                false, "", "", "", "system", "passeport", "user_perimetre");
+                app, null, null);
 
         Set<String> groups = provider.getGroups(user);
 
@@ -104,8 +101,7 @@ public class PasseportGroupProviderTest {
 
         PasseportGroupProvider provider = new PasseportGroupProvider(
                 wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
-                app, null, null, 
-                false, "", "", "", "system", "passeport", "user_perimetre");
+                app, null, null);
 
         Set<String> groups = provider.getGroups(user);
 
@@ -114,47 +110,16 @@ public class PasseportGroupProviderTest {
     
     @Test
     public void testEmptyOrNullUser() {
-        PasseportGroupProvider provider = new PasseportGroupProvider("http://localhost", "MATIS", null, null, 
-                false, "", "", "", "system", "passeport", "user_perimetre");
+        PasseportGroupProvider provider = new PasseportGroupProvider("http://localhost", "MATIS", null, null);
         assertTrue(provider.getGroups(null).isEmpty());
         assertTrue(provider.getGroups("").isEmpty());
     }
 
     @Test
-    public void testCyclicalDependencyBreaker(WireMockRuntimeInfo wmRuntimeInfo) {
-        String serviceAccount = "passeport_writer";
-        PasseportGroupProvider provider = new PasseportGroupProvider(
-                wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
-                "MATIS", null, null, 
-                true, "jdbc:trino://localhost:8080", serviceAccount, "", "system", "passeport", "user_perimetre");
-
-        // The call should return empty set immediately without hitting the API or throwing JDBC exceptions
-        Set<String> groups = provider.getGroups(serviceAccount);
-        assertTrue(groups.isEmpty());
-        
-        // Verify no API calls were made for the service account
-        verify(0, getRequestedFor(urlEqualTo("/s1sem/habilitations/" + serviceAccount + "/MATIS")));
-    }
-
-    @Test
-    public void testFactoryThrowsOnMissingJdbcConfigWhenWriteEnabled() {
+    public void testFactorySucceedsWhenNoJdbcConfig() {
         PasseportGroupProviderFactory factory = new PasseportGroupProviderFactory();
         java.util.Map<String, String> config = new java.util.HashMap<>();
-        config.put("passeport.enable-perimetre-write", "true");
-        // No jdbc-url or jdbc-user provided
-        
-        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
-            factory.create(config);
-        });
-        
-        assertTrue(exception.getMessage().contains("passeport.enable-perimetre-write=true requires passeport.jdbc-url and passeport.jdbc-user to be set"));
-    }
-
-    @Test
-    public void testFactorySucceedsWhenWriteDisabledAndNoJdbcConfig() {
-        PasseportGroupProviderFactory factory = new PasseportGroupProviderFactory();
-        java.util.Map<String, String> config = new java.util.HashMap<>();
-        config.put("passeport.enable-perimetre-write", "false");
+        config.put("passeport.api-url", "http://localhost");
         
         assertDoesNotThrow(() -> {
             factory.create(config);
