@@ -33,10 +33,13 @@ import io.trino.spi.eventlistener.EventListener;
 public class PasseportSystemAccessControl implements SystemAccessControl {
 
     private final Map<CatalogSchemaTableName, String> rowFilterMappings;
+    private final String serviceAccount;
 
     public PasseportSystemAccessControl(
-            Map<CatalogSchemaTableName, String> rowFilterMappings) {
+            Map<CatalogSchemaTableName, String> rowFilterMappings,
+            String serviceAccount) {
         this.rowFilterMappings = rowFilterMappings;
+        this.serviceAccount = serviceAccount;
     }
 
     @Override
@@ -60,11 +63,15 @@ public class PasseportSystemAccessControl implements SystemAccessControl {
                 expression = String.format("%s IN (%s)", filterColumn, inList);
             }
             
-            // Le filtre s'exécute sous l'identité de l'utilisateur courant, 
-            // en ne spécifiant pas d'identité on conserve les rôles actifs (Invoker rights)
-            return Collections.singletonList(ViewExpression.builder()
-                    .expression(expression)
-                    .build());
+            ViewExpression.Builder builder = ViewExpression.builder().expression(expression);
+            
+            // Si un compte de service est configuré, on force l'exécution en tant que ce compte (Definer rights)
+            // Sinon, l'identité reste vide et on conserve les rôles actifs de l'utilisateur (Invoker rights)
+            if (serviceAccount != null && !serviceAccount.isEmpty()) {
+                builder.identity(serviceAccount);
+            }
+            
+            return Collections.singletonList(builder.build());
         }
         return Collections.emptyList();
     }

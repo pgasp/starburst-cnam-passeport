@@ -43,10 +43,14 @@ public class PasseportSystemAccessControlFactory implements SystemAccessControlF
             }
         }
 
+        // Configuration du compte de service (optionnel) pour exécuter le Row Filter en mode Definer.
+        // Si non renseigné, le filtre s'exécutera en mode Invoker (avec les droits de l'utilisateur).
+        String serviceAccount = config.get("passeport.service-account");
+
         // Configuration obsolète mais conservée pour éviter des erreurs au démarrage si présente dans le fichier
         config.getOrDefault("passeport.perimetre-catalog", "system");
         config.getOrDefault("passeport.perimetre-schema", "passeport");
 
-        return new PasseportSystemAccessControl(rowFilterMappings);
+        return new PasseportSystemAccessControl(rowFilterMappings, serviceAccount);
     }
 }
