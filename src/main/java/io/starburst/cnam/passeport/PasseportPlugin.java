@@ -20,6 +20,9 @@ public class PasseportPlugin implements Plugin {
 
     @Override
     public Set<Class<?>> getFunctions() {
-        return Collections.singleton(PasseportFunctions.class);
+        return Set.of(
+            PasseportFunctions.class,
+            CryptoFunctions.class
+        );
     }
 }
