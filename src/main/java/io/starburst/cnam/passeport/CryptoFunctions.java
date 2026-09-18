@@ -5,8 +5,6 @@ import io.trino.spi.function.ScalarFunction;
 import io.trino.spi.function.SqlNullable;
 import io.trino.spi.function.SqlType;
 import io.trino.spi.type.StandardTypes;
-import io.airlift.slice.Slice;
-import io.airlift.slice.Slices;
 
 public final class CryptoFunctions {
 
@@ -16,10 +14,9 @@ public final class CryptoFunctions {
     @Description("Decrypts an AES-256-GCM encrypted assmac_act value for authorized callers; returns NULL on any error (fail-closed)")
     @SqlNullable
     @SqlType(StandardTypes.VARCHAR)
-    public static Slice decryptAssmac(@SqlType(StandardTypes.VARCHAR) Slice ciphertextSlice) {
+    public static String decryptAssmac(@SqlType(StandardTypes.VARCHAR) String ciphertext) {
         try {
-            String plaintext = AssmacCipher.decrypt(ciphertextSlice.toStringUtf8());
-            return Slices.utf8Slice(plaintext);
+            return AssmacCipher.decrypt(ciphertext);
         } catch (Exception e) {
             return null;
         }

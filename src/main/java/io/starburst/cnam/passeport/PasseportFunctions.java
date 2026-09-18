@@ -6,7 +6,6 @@ import io.trino.spi.function.SqlNullable;
 import io.trino.spi.function.SqlType;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.type.StandardTypes;
-import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
 import io.trino.spi.block.Block;
 import io.trino.spi.block.BlockBuilder;
@@ -43,9 +42,9 @@ public final class PasseportFunctions {
     @ScalarFunction("passport_biac_roles")
     @Description("Returns the list of enabled system roles (BIAC) for the current user from the session identity")
     @SqlType(StandardTypes.VARCHAR)
-    public static Slice getPassportBiacRoles(ConnectorSession session) {
+    public static String getPassportBiacRoles(ConnectorSession session) {
         if (session == null || session.getIdentity() == null) {
-            return Slices.utf8Slice("null");
+            return "null";
         }
         
         String identityString = session.getIdentity().toString();
@@ -56,21 +55,20 @@ public final class PasseportFunctions {
         if (start != -1) {
             int end = identityString.indexOf("]", start);
             if (end != -1) {
-                return Slices.utf8Slice(identityString.substring(start + prefix.length(), end));
+                return identityString.substring(start + prefix.length(), end);
             }
         }
         
-        return Slices.utf8Slice("");
+        return "";
     }
     
     @ScalarFunction("flush_passeport_cache")
     @Description("Flushes the Passeport perimetre cache for a specific user (or all if null)")
     @SqlType(StandardTypes.BOOLEAN)
-    public static boolean flushPasseportCache(@SqlNullable @SqlType(StandardTypes.VARCHAR) Slice userSlice) {
-        if (userSlice == null) {
+    public static boolean flushPasseportCache(@SqlNullable @SqlType(StandardTypes.VARCHAR) String user) {
+        if (user == null) {
             PasseportPerimetreCache.getInstance().flushAll();
         } else {
-            String user = userSlice.toStringUtf8();
             PasseportPerimetreCache.getInstance().flush(user);
         }
         return true;
