@@ -20,11 +20,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.Properties;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -36,27 +31,12 @@ public class PasseportGroupProvider implements GroupProvider {
     private final String apiUrl;
     private final String codeApplication;
     private final HttpClient httpClient;
-    
-    private final boolean enablePerimetreWrite;
-    private final String jdbcUrl;
-    private final String jdbcUser;
-    private final String jdbcPassword;
-    private final String perimetreCatalog;
-    private final String perimetreSchema;
-    private final String perimetreTable;
 
     public PasseportGroupProvider(
             String apiUrl, 
             String codeApplication, 
             String trustStorePath, 
-            String trustStorePassword,
-            boolean enablePerimetreWrite,
-            String jdbcUrl,
-            String jdbcUser,
-            String jdbcPassword,
-            String perimetreCatalog,
-            String perimetreSchema,
-            String perimetreTable) {
+            String trustStorePassword) {
         log.fine("Initializing PasseportGroupProvider with API URL: " + apiUrl + ", Code Application: " + codeApplication);
         this.apiUrl = apiUrl;
         this.codeApplication = codeApplication;
@@ -92,14 +72,6 @@ public class PasseportGroupProvider implements GroupProvider {
 
         this.httpClient = clientBuilder.build();
         
-        this.enablePerimetreWrite = enablePerimetreWrite;
-        this.jdbcUrl = jdbcUrl;
-        this.jdbcUser = jdbcUser;
-        this.jdbcPassword = jdbcPassword;
-        this.perimetreCatalog = perimetreCatalog;
-        this.perimetreSchema = perimetreSchema;
-        this.perimetreTable = perimetreTable;
-        
         log.fine("PasseportGroupProvider initialization complete.");
     }
 
@@ -109,15 +81,6 @@ public class PasseportGroupProvider implements GroupProvider {
         
         if (user == null || user.isBlank()) {
             log.fine("User is null or blank. Returning empty set.");
-            return Collections.emptySet();
-        }
-
-        // --- CYCLICAL DEPENDENCY BREAKER ---
-        // Si l'utilisateur courant est le compte de service utilisé pour écrire en base,
-        // on retourne immédiatement un set vide pour éviter une boucle infinie de connexions :
-        // getGroups(user) -> JDBC(passeport_writer) -> getGroups(passeport_writer) -> JDBC(passeport_writer)...
-        if (enablePerimetreWrite && user.equals(jdbcUser)) {
-            log.fine("Cyclical dependency breaker: bypassing Passeport API and JDBC write for service account '" + user + "'");
             return Collections.emptySet();
         }
 
@@ -156,7 +119,6 @@ public class PasseportGroupProvider implements GroupProvider {
 
             Set<String> groups = new HashSet<>();
             List<String> perimetres = new ArrayList<>();
-            List<PerimetreRecord> records = new ArrayList<>();
             
             // Parsing de la réponse JSON
             log.fine("Parsing JSON response payload...");
@@ -182,28 +144,12 @@ public class PasseportGroupProvider implements GroupProvider {
                             log.finer("Extracted perimetre: " + p);
                         }
                     }
-                    
-                    if (codePa != null && p != null && !p.isBlank()) {
-                        records.add(new PerimetreRecord(codePa, p));
-                    }
                 }
             } else {
                 log.warning("Expected JSON array from Passeport API but received a different structure for user " + user);
             }
             
             log.fine("Resolution complete for user " + user + ". Found " + groups.size() + " unique code_pa(s) and " + perimetres.size() + " unique perimetre(s).");
-            
-            // Écriture JDBC fail-closed (périmètre uniquement) AVANT la mise en cache
-            if (enablePerimetreWrite) {
-                try {
-                    writePerimetresToDb(user, records);
-                } catch (SQLException e) {
-                    log.log(Level.SEVERE, "Failed to write perimetres for user " + user + ". The user will have their groups but NO perimetres (RLS fail-closed).", e);
-                    // On ne throw PAS l'exception pour permettre la remontée des groupes.
-                }
-            } else {
-                log.fine("passeport.enable-perimetre-write=false. JDBC writing skipped for user " + user);
-            }
             
             // 2. Mise à jour du cache partagé (Guava Cache - TTL 5min)
             log.fine("Updating Guava Auth Cache for user " + user + " with perimetres: " + perimetres);
@@ -218,88 +164,6 @@ public class PasseportGroupProvider implements GroupProvider {
             // On log et on retourne un set vide, sans propager l'exception pour ne pas casser la session.
             log.log(Level.SEVERE, "Failed to fetch groups from Passeport for user " + user + ". Applying fail-closed policy (returning empty groups).", e);
             return Collections.emptySet();
-        }
-    }
-    
-    private void writePerimetresToDb(String user, List<PerimetreRecord> records) throws SQLException {
-        log.fine("Writing perimetres to Trino/PostgreSQL via JDBC for user " + user);
-        
-        Properties props = new Properties();
-        props.setProperty("user", jdbcUser);
-        if (jdbcPassword != null && !jdbcPassword.isEmpty()) {
-            props.setProperty("password", jdbcPassword);
-        }
-        
-        boolean isPostgres = jdbcUrl != null && jdbcUrl.startsWith("jdbc:postgresql:");
-        try {
-            // Check JDBC URL to load the appropriate driver
-            if (isPostgres) {
-                Class.forName("org.postgresql.Driver");
-            } else {
-                Class.forName("io.trino.jdbc.TrinoDriver");
-            }
-        } catch (ClassNotFoundException e) {
-            log.log(Level.SEVERE, "JDBC Driver not found in plugin classpath!", e);
-            throw new SQLException("JDBC Driver not found", e);
-        }
-        
-        try (Connection conn = DriverManager.getConnection(jdbcUrl, props)) {
-            String fullTableName;
-            if (isPostgres) {
-                // PostgreSQL expects schema.table
-                fullTableName = perimetreSchema + "." + perimetreTable;
-                
-                // Auto-create table if it does not exist (schema creation removed per guidelines)
-                try (java.sql.Statement stmt = conn.createStatement()) {
-                    stmt.execute("CREATE TABLE IF NOT EXISTS " + fullTableName + " (" +
-                            "upn VARCHAR(255) NOT NULL, " +
-                            "code_pa VARCHAR(100) NOT NULL, " +
-                            "perimetre VARCHAR(50) NOT NULL" +
-                            ")");
-                }
-            } else {
-                // Trino expects catalog.schema.table
-                fullTableName = perimetreCatalog + "." + perimetreSchema + "." + perimetreTable;
-            }
-            
-            conn.setAutoCommit(false); // Enable transaction for delete + insert
-            
-            // Delete existing records for the user
-            String deleteSql = "DELETE FROM " + fullTableName + " WHERE upn = ?";
-            try (PreparedStatement deleteStmt = conn.prepareStatement(deleteSql)) {
-                deleteStmt.setString(1, user);
-                deleteStmt.executeUpdate();
-            }
-            
-            // Insert new records
-            if (!records.isEmpty()) {
-                String insertSql = "INSERT INTO " + fullTableName + " (upn, code_pa, perimetre) VALUES (?, ?, ?)";
-                try (PreparedStatement insertStmt = conn.prepareStatement(insertSql)) {
-                    for (PerimetreRecord record : records) {
-                        insertStmt.setString(1, user);
-                        insertStmt.setString(2, record.codePa);
-                        insertStmt.setString(3, record.perimetre);
-                        insertStmt.addBatch();
-                    }
-                    insertStmt.executeBatch();
-                }
-            }
-            
-            conn.commit();
-            log.fine("Successfully wrote " + records.size() + " perimetres to DB for user " + user);
-        } catch (SQLException e) {
-            log.log(Level.SEVERE, "JDBC Error while writing perimetres for user " + user, e);
-            throw e; // will be caught in the main block and logged without breaking group resolution
-        }
-    }
-    
-    private static class PerimetreRecord {
-        final String codePa;
-        final String perimetre;
-        
-        PerimetreRecord(String codePa, String perimetre) {
-            this.codePa = codePa;
-            this.perimetre = perimetre;
         }
     }
 }

@@ -1,46 +1,20 @@
-# Améliorations de l'implémentation (Piste 1)
+# Améliorations de l'implémentation
 
-## Découplage de l'écriture des périmètres (Opt-In JDBC)
+Ce document liste les optimisations architecturales implémentées dans le plugin.
 
-Le plugin a été refactoré pour permettre d'utiliser le `PasseportGroupProvider` soit de manière autonome (seulement la récupération des groupes depuis l'API Passeport), soit couplé avec l'écriture des périmètres RLS en base de données. 
+## Refonte de la persistance (Depuis v1.1.10)
 
-L'écriture dans la table `user_perimetre` via JDBC est désormais strictement opt-in via la propriété :
-`passeport.enable-perimetre-write=true`
+Historiquement, le plugin utilisait JDBC pour persister les habilitations de l'utilisateur (ses périmètres) dans une table `user_perimetre` (ex. PostgreSQL ou dans un catalogue `system`). Cette approche avait de graves inconvénients de performance et de sécurité :
+1. Une sous-requête SQL lente `SELECT perimetre FROM system.passeport.user_perimetre` était générée pour chaque Row Filter.
+2. Le moteur devait maintenir des connexions JDBC ouvertes (pool).
+3. Le Row Filter (`PasseportSystemAccessControl`) évaluait la sous-requête avec des droits "Definer", ce qui cassait l'héritage des rôles et provoquait des rejets intempestifs de BIAC.
 
-### Configuration de la résolution de groupes (sans écriture JDBC)
+**L'écriture JDBC a été intégralement supprimée.**
 
-Si vous souhaitez utiliser le plugin uniquement pour résoudre les groupes (ex: utilisation classique pour les rôles BIAC), omettez la configuration JDBC. Le Provider sera actif et les requêtes JDBC ne seront pas tentées :
+### Le cache en mémoire (Guava)
 
-```properties
-# etc/group-provider.properties
-group-provider.name=cnam-passeport
-passeport.enable-perimetre-write=false
-passeport.code-application=MATIS_PROD
-passeport.api-url=https://api.passeport.ramage/s1sem/habilitations
-```
-
-### Configuration complète (Groupes + RLS avec écriture JDBC)
-
-Si vous utilisez le RLS dynamique (`PasseportSystemAccessControl`), le `GroupProvider` doit être configuré pour injecter les périmètres dans Trino afin que la sous-requête puisse filtrer les tables :
-
-```properties
-# etc/group-provider.properties
-group-provider.name=cnam-passeport
-passeport.enable-perimetre-write=true
-passeport.code-application=MATIS_PROD
-passeport.api-url=https://api.passeport.ramage/s1sem/habilitations
-
-# Configuration JDBC obligatoire si write=true
-passeport.jdbc-url=jdbc:trino://localhost:8080
-passeport.jdbc-user=passeport_writer
-passeport.jdbc-password=...
-
-# Définition de la table cible (doit correspondre à celle du SystemAccessControl)
-passeport.perimetre-catalog=system
-passeport.perimetre-schema=passeport
-```
-
-**⚠️ Point de vigilance :** La table cible (`catalog`, `schema`, `table`) est configurée *manuellement* dans deux fichiers de propriétés différents s'ils sont séparés (`etc/group-provider.properties` et `etc/passeport-access-control.properties`). Vous devez vous assurer que les trois valeurs correspondent exactement entre les deux configurations.
-
-## Validation Stricte
-Si `passeport.enable-perimetre-write=true` est activé, la Fabrique s'assurera au démarrage du coordinateur que `passeport.jdbc-url` et `passeport.jdbc-user` sont renseignés, sous peine de lever une exception `IllegalArgumentException` et d'empêcher le démarrage silencieux d'une configuration défectueuse.
+Aujourd'hui, le `PasseportGroupProvider` utilise exclusivement le `PasseportAuthCache` et le `PasseportPerimetreCache`. 
+- Lorsque l'utilisateur se connecte, l'API Passeport est interrogée.
+- Les groupes (ex: codes CAISSE) et les périmètres (ex: codes IDF, PACA) sont stockés dans un cache interne de la JVM (TTL de 15 minutes).
+- Lorsqu'une requête est soumise sur une table sécurisée, le `PasseportSystemAccessControl` lit le cache local, et construit une clause `IN` statique et instantanée : `region_id IN ('IDF', 'PACA')`.
+- Si le cache est vide (ou si l'API a retourné une erreur), le plugin applique un filtre `FALSE`, garantissant un "fail-closed" ultra-sécurisé interdisant l'accès aux données sans briser la requête globale.
