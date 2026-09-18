@@ -33,19 +33,10 @@ import io.trino.spi.eventlistener.EventListener;
 public class PasseportSystemAccessControl implements SystemAccessControl {
 
     private final Map<CatalogSchemaTableName, String> rowFilterMappings;
-    private final String perimetreCatalog;
-    private final String perimetreSchema;
-    private final String perimetreTable;
 
     public PasseportSystemAccessControl(
-            Map<CatalogSchemaTableName, String> rowFilterMappings,
-            String perimetreCatalog,
-            String perimetreSchema,
-            String perimetreTable) {
+            Map<CatalogSchemaTableName, String> rowFilterMappings) {
         this.rowFilterMappings = rowFilterMappings;
-        this.perimetreCatalog = perimetreCatalog;
-        this.perimetreSchema = perimetreSchema;
-        this.perimetreTable = perimetreTable;
     }
 
     @Override
@@ -53,15 +44,25 @@ public class PasseportSystemAccessControl implements SystemAccessControl {
         String filterColumn = rowFilterMappings.get(tableName);
         
         if (filterColumn != null) {
-            // Implémentation stricte de la note : SOUS-REQUÊTE, pas de fonction.
-            String expression = String.format(
-                    "%s IN (SELECT perimetre FROM %s.%s.%s WHERE upn = current_user)",
-                    filterColumn, perimetreCatalog, perimetreSchema, perimetreTable
-            );
+            String user = context.getIdentity().getUser();
+            List<String> perimetres = PasseportPerimetreCache.getInstance().getPerimetre(user);
             
-            // Le filtre s'exécute sous l'identité de l'utilisateur courant
+            String expression;
+            if (perimetres == null || perimetres.isEmpty()) {
+                // Fail-closed : aucun périmètre en cache, on bloque l'accès
+                expression = "FALSE";
+            } else {
+                // Construction d'une clause IN performante : filterColumn IN ('A', 'B')
+                String inList = perimetres.stream()
+                        .map(p -> "'" + p.replace("'", "''") + "'")
+                        .collect(Collectors.joining(", "));
+                
+                expression = String.format("%s IN (%s)", filterColumn, inList);
+            }
+            
+            // Le filtre s'exécute sous l'identité de l'utilisateur courant, 
+            // en ne spécifiant pas d'identité on conserve les rôles actifs (Invoker rights)
             return Collections.singletonList(ViewExpression.builder()
-                    .identity(context.getIdentity().getUser())
                     .expression(expression)
                     .build());
         }

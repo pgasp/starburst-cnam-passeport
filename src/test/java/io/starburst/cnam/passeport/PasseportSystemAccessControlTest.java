@@ -13,6 +13,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import java.util.Collections;
+import java.util.Arrays;
+import java.util.HashSet;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,9 +29,6 @@ import io.trino.spi.connector.CatalogSchemaTableName;
 public class PasseportSystemAccessControlTest {
 
     private PasseportSystemAccessControl accessControl;
-    private final String perimetreCatalog = "system";
-    private final String perimetreSchema = "passeport";
-    private final String perimetreTable = "user_perimetre";
 
     @BeforeEach
     public void setup() {
@@ -35,18 +36,19 @@ public class PasseportSystemAccessControlTest {
         // Use null as the map key to bypass CatalogSchemaTableName instantiation
         rowFilterMappings.put(null, "region_id");
         
-        accessControl = new PasseportSystemAccessControl(
-                rowFilterMappings,
-                perimetreCatalog,
-                perimetreSchema,
-                perimetreTable
-        );
+        accessControl = new PasseportSystemAccessControl(rowFilterMappings);
+        
+        // Nettoyage du cache global avant chaque test
+        PasseportPerimetreCache.getInstance().flushAll();
     }
 
     @Test
-    public void testGetRowFiltersWithMappedTable() {
+    public void testGetRowFiltersWithMappedTableAndPopulatedCache() {
         Identity identity = Identity.ofUser("alice.smith");
         SystemSecurityContext context = new SystemSecurityContext(identity, new QueryId("q1"), Instant.now());
+        
+        // Simuler la récupération des périmètres par le GroupProvider (stockés en cache)
+        PasseportAuthCache.getInstance().put("alice.smith", new HashSet<>(Arrays.asList("group1")), Arrays.asList("IDF", "PACA"));
         
         // Pass null for the tableName parameter to match our mocked mapping
         List<ViewExpression> rowFilters = accessControl.getRowFilters(context, null);
@@ -54,12 +56,27 @@ public class PasseportSystemAccessControlTest {
         assertEquals(1, rowFilters.size(), "Should return a single ViewExpression");
         ViewExpression viewExpression = rowFilters.get(0);
         
-        String expectedExpression = "region_id IN (SELECT perimetre FROM system.passeport.user_perimetre WHERE upn = current_user)";
+        String expectedExpression = "region_id IN ('IDF', 'PACA')";
         assertEquals(expectedExpression, viewExpression.getExpression(), "Expression text must match the expected pattern");
         
         Optional<String> securityIdentity = viewExpression.getSecurityIdentity();
-        assertTrue(securityIdentity.isPresent(), "Security identity should be present");
-        assertEquals("alice.smith", securityIdentity.get(), "Identity must match the current SystemSecurityContext's user");
+        assertTrue(securityIdentity.isEmpty(), "Security identity should be empty to preserve user roles (invoker rights)");
+    }
+
+    @Test
+    public void testGetRowFiltersWithMappedTableAndEmptyCache() {
+        Identity identity = Identity.ofUser("charlie.brown");
+        SystemSecurityContext context = new SystemSecurityContext(identity, new QueryId("q3"), Instant.now());
+        
+        // Le cache est vide ou l'utilisateur n'a pas de périmètres (Fail-closed)
+        List<ViewExpression> rowFilters = accessControl.getRowFilters(context, null);
+        
+        assertEquals(1, rowFilters.size(), "Should return a single ViewExpression");
+        ViewExpression viewExpression = rowFilters.get(0);
+        
+        // On s'attend à FALSE car il n'a aucun périmètre
+        String expectedExpression = "FALSE";
+        assertEquals(expectedExpression, viewExpression.getExpression(), "Expression text must be FALSE (fail-closed)");
     }
 
     @Test
@@ -68,12 +85,7 @@ public class PasseportSystemAccessControlTest {
         SystemSecurityContext context = new SystemSecurityContext(identity, new QueryId("q2"), Instant.now());
         
         // Create an empty access control mapping to simulate an unmapped table scenario
-        PasseportSystemAccessControl unmappedAccessControl = new PasseportSystemAccessControl(
-                new HashMap<>(),
-                perimetreCatalog,
-                perimetreSchema,
-                perimetreTable
-        );
+        PasseportSystemAccessControl unmappedAccessControl = new PasseportSystemAccessControl(new HashMap<>());
         
         List<ViewExpression> rowFilters = unmappedAccessControl.getRowFilters(context, null);
         

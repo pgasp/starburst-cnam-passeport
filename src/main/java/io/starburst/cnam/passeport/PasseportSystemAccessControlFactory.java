@@ -43,15 +43,10 @@ public class PasseportSystemAccessControlFactory implements SystemAccessControlF
             }
         }
 
-        String perimetreCatalog = config.getOrDefault("passeport.perimetre-catalog", "system");
-        String perimetreSchema = config.getOrDefault("passeport.perimetre-schema", "passeport");
-        String perimetreTable = "user_perimetre"; // Hardcodé selon les conventions
+        // Configuration obsolète mais conservée pour éviter des erreurs au démarrage si présente dans le fichier
+        config.getOrDefault("passeport.perimetre-catalog", "system");
+        config.getOrDefault("passeport.perimetre-schema", "passeport");
 
-        return new PasseportSystemAccessControl(
-                rowFilterMappings, 
-                perimetreCatalog, 
-                perimetreSchema, 
-                perimetreTable
-        );
+        return new PasseportSystemAccessControl(rowFilterMappings);
     }
 }
