@@ -26,43 +26,40 @@ graph TD
     style API_Passeport fill:#3b82f6,color:white,stroke:#1d4ed8,stroke-width:2px
 ```
 
-## 2. Diagramme de Séquence (Déploiement & Exécution)
+## 2. Diagramme de Séquence (Exécution d'une Requête et Filtrage)
 
-Ce diagramme détaille la cinématique technique lors du redémarrage du pod EKS (GitOps) et lors du traitement d'une requête SQL (utilisation du cache en mémoire).
+Ce diagramme de séquence se concentre spécifiquement sur le cycle de vie d'une requête SQL : de l'authentification jusqu'à l'application des filtres (Row-Level et Column-Level) sur les tables, en passant par l'interrogation de l'API Passeport.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User as Utilisateur / DBeaver
-    participant EKS as InitContainer (AWS EKS)
-    participant GitHub as GitHub Releases
-    participant SEP as Starburst Coordinator
-    participant Plugin as Plugin Passeport
-    participant Cache as In-Memory Cache
-    participant API as API REST Passeport
+    actor User as Client (DBeaver/UI)
+    participant SEP as Moteur Starburst
+    participant PGP as Plugin Passeport<br>(Group Provider)
+    participant API as API Passeport
+    participant SAC as System Access Control
+    participant Engine as Moteur d'Exécution<br>& Tables (Iceberg)
 
-    Note over EKS, GitHub: Phase de déploiement (Helm Upgrade)
-    EKS->>GitHub: Télécharge passeport-group-provider-2.0.0.zip
-    GitHub-->>EKS: Archive ZIP
-    EKS->>SEP: Extrait dans /usr/lib/starburst/plugin/cnam-passeport
-    SEP->>SEP: Démarre (SERVER STARTED)
-
-    Note over User, API: Phase de requête SQL
-    User->>SEP: Authentification (Mot de passe) + Requête SQL
-    SEP->>Plugin: getGroups(username)
-    Plugin->>Cache: Vérifie présence des groupes
+    User->>SEP: 1. Envoi requête SQL (ex: SELECT * FROM table_pro) + Credentials
+    SEP->>SEP: 2. Validation Authentification (Mot de passe)
     
-    alt Cache Miss (Non trouvé)
-        Plugin->>API: Appel HTTP (https://api.passeport.ramage/...)
-        API-->>Plugin: Retourne les groupes (JSON)
-        Plugin->>Cache: Stocke le résultat
-    else Cache Hit (Trouvé)
-        Cache-->>Plugin: Retourne les groupes en mémoire
+    SEP->>PGP: 3. getGroups(username)
+    
+    alt Groupes en Cache local
+        PGP-->>SEP: Retourne les groupes (Hit)
+    else Groupes non mis en cache (Miss)
+        PGP->>API: 4. GET /api/v1/users/{username}/perimetres
+        API-->>PGP: 5. Réponse JSON (ex: ["PRO", "RH"])
+        PGP-->>SEP: 6. Retourne les groupes
     end
     
-    Plugin-->>SEP: Set<String> (Groupes de l'utilisateur)
-    SEP->>SEP: Applique le contrôle d'accès basé sur les groupes
-    SEP-->>User: Résultat de la requête SQL (HTTP 200)
+    SEP->>SAC: 7. checkCanSelectFromColumns(user, groups, table)
+    SAC->>SAC: 8. Analyse des droits basés sur les groupes ["PRO", "RH"]
+    SAC-->>SEP: 9. Applique filtres (ex: Row Filter "region='IDF'")
+    
+    SEP->>Engine: 10. Exécution de la requête réécrite avec les filtres
+    Engine-->>SEP: 11. Données brutes filtrées
+    SEP-->>User: 12. Résultat final sécurisé
 ```
 
 ## Composants Clés
