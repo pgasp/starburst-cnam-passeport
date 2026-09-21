@@ -8,7 +8,7 @@ public class PasseportGroupProviderFactory implements GroupProviderFactory {
 
     @Override
     public String getName() {
-        return "cnam-passeport";
+        return "passeport";
     }
 
     @Override
