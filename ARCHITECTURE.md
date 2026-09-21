@@ -10,7 +10,7 @@ Ce diagramme illustre le parcours de la donnée depuis la connexion de l'utilisa
 graph TD
     Client([Clients SQL<br>DBeaver, UI, Jupyter]) -->|1. Identifiants| Auth[Authentification Starburst<br>Password/LDAP]
     
-    subgraph Cluster Starburst Enterprise (EKS)
+    subgraph Cluster_EKS [Cluster Starburst Enterprise]
         Auth -->|2. Username validé| PGP(Passeport Group Provider<br>Plugin Java Custom)
         PGP -->|4. Liste des Groupes| SAC(System Access Control<br>Règles & Sécurité)
         SAC -->|5. Application des Filtres<br>Row-Level / Column-Level| Engine[Moteur de requête Trino]
