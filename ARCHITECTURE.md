@@ -2,7 +2,32 @@
 
 Ce document décrit l'architecture finale et le flux d'intégration du plugin `passeport-group-provider` (version 2.0.0) au sein de l'environnement Starburst Enterprise sur AWS EKS (`fr-ai-workshop`).
 
-## Diagramme d'Intégration (Cible : Starburst 482-e)
+## 1. Vue d'Ensemble de l'Architecture (Overview)
+
+Ce diagramme illustre le parcours de la donnée depuis la connexion de l'utilisateur jusqu'à l'accès physique aux tables. Il met en évidence la séparation des responsabilités entre l'authentification (Starburst), la résolution des groupes (notre plugin via l'API Passeport), et l'application des filtres de sécurité sur les données (System Access Control).
+
+```mermaid
+graph TD
+    Client([Clients SQL<br>DBeaver, UI, Jupyter]) -->|1. Identifiants| Auth[Authentification Starburst<br>Password/LDAP]
+    
+    subgraph Cluster Starburst Enterprise (EKS)
+        Auth -->|2. Username validé| PGP(Passeport Group Provider<br>Plugin Java Custom)
+        PGP -->|4. Liste des Groupes| SAC(System Access Control<br>Règles & Sécurité)
+        SAC -->|5. Application des Filtres<br>Row-Level / Column-Level| Engine[Moteur de requête Trino]
+    end
+
+    PGP <-->|3. Interrogation (avec Cache)| API_Passeport((API Passeport<br>Référentiel Externe))
+    
+    Engine -->|6. Accès Sécurisé| Tables[(Bases de données<br>Iceberg, Postgres...)]
+
+    style PGP fill:#10b981,color:white,stroke:#047857,stroke-width:2px
+    style SAC fill:#f59e0b,color:white,stroke:#b45309,stroke-width:2px
+    style API_Passeport fill:#3b82f6,color:white,stroke:#1d4ed8,stroke-width:2px
+```
+
+## 2. Diagramme de Séquence (Déploiement & Exécution)
+
+Ce diagramme détaille la cinématique technique lors du redémarrage du pod EKS (GitOps) et lors du traitement d'une requête SQL (utilisation du cache en mémoire).
 
 ```mermaid
 sequenceDiagram
