@@ -1,5 +1,7 @@
 package io.starburst.cnam.passeport;
 
+import com.google.inject.Injector;
+import io.airlift.bootstrap.Bootstrap;
 import io.trino.spi.security.GroupProvider;
 import io.trino.spi.security.GroupProviderFactory;
 import java.util.Map;
@@ -13,16 +15,17 @@ public class PasseportGroupProviderFactory implements GroupProviderFactory {
 
     @Override
     public GroupProvider create(Map<String, String> config) {
-        String codeApplication = config.getOrDefault("passeport.code-application", "PASSEPORT_DEFAULT");
-        String apiUrl = config.getOrDefault("passeport.api-url", "https://api.passeport.ramage/s1sem/habilitations");
-        String trustStorePath = config.get("passeport.trust-store-path");
-        String trustStorePassword = config.get("passeport.trust-store-password");
+        Bootstrap app = new Bootstrap(new PasseportModule());
         
-        return new PasseportGroupProvider(
-                apiUrl, 
-                codeApplication, 
-                trustStorePath, 
-                trustStorePassword
-        );
+        try {
+            Injector injector = app
+                .doNotInitializeLogging()
+                .setRequiredConfigurationProperties(config)
+                .initialize();
+                
+            return injector.getInstance(PasseportGroupProvider.class);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize PasseportGroupProvider", e);
+        }
     }
 }

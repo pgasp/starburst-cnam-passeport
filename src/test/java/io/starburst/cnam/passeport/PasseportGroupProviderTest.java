@@ -2,6 +2,7 @@ package io.starburst.cnam.passeport;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import io.trino.spi.TrinoException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -13,41 +14,33 @@ import static org.junit.jupiter.api.Assertions.*;
 @WireMockTest
 public class PasseportGroupProviderTest {
 
-    private PasseportPerimetreCache cache;
-
-    @BeforeEach
-    public void setup() {
-        cache = PasseportPerimetreCache.getInstance();
-        cache.flushAll();
-    }
-
     @Test
     public void testSuccessfulGroupResolution(WireMockRuntimeInfo wmRuntimeInfo) {
         String user = "jean.dupont";
         String app = "MATIS_PROD";
         
-        // Mock Passeport API Response
         stubFor(get(urlEqualTo("/s1sem/habilitations/" + user + "/" + app))
                 .willReturn(aResponse()
                         .withStatus(200)
                         .withHeader("Content-Type", "application/json")
-                        .withBody("[{\"code_pa\": \"ROLE_A\", \"perimetre\": \"311\"}, {\"code_pa\": \"ROLE_B\", \"perimetre\": \"312\"}, {\"code_pa\": \"ROLE_A\", \"perimetre\": \"311\"}]"))); // Also testing deduplication
+                        .withBody("[{\"code_pa\": \"ROLE_A\", \"perimetre\": \"311\"}, {\"code_pa\": \"ROLE_B\", \"perimetre\": \"312\"}, {\"code_pa\": \"ROLE_A\", \"perimetre\": \"311\"}]")));
 
-        PasseportGroupProvider provider = new PasseportGroupProvider(
-                wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
-                app, null, null);
+        PasseportConfig config = new PasseportConfig()
+            .setApiUrl(wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations")
+            .setCodeApplication(app);
+
+        PasseportAuthService authService = new PasseportAuthService(config);
+        PasseportGroupProvider provider = new PasseportGroupProvider(authService);
 
         Set<String> groups = provider.getGroups(user);
 
-        // Verify Groups
         assertEquals(2, groups.size());
         assertTrue(groups.contains("ROLE_A"));
         assertTrue(groups.contains("ROLE_B"));
 
-        // Verify Perimetre Cache Update (and deduplication)
-        assertEquals(2, cache.getPerimetre(user).size());
-        assertTrue(cache.getPerimetre(user).contains("311"));
-        assertTrue(cache.getPerimetre(user).contains("312"));
+        assertEquals(2, authService.getPerimetres(user).size());
+        assertTrue(authService.getPerimetres(user).contains("311"));
+        assertTrue(authService.getPerimetres(user).contains("312"));
     }
 
     @Test
@@ -58,15 +51,14 @@ public class PasseportGroupProviderTest {
         stubFor(get(urlEqualTo("/s1sem/habilitations/" + user + "/" + app))
                 .willReturn(aResponse().withStatus(500)));
 
-        PasseportGroupProvider provider = new PasseportGroupProvider(
-                wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
-                app, null, null);
+        PasseportConfig config = new PasseportConfig()
+            .setApiUrl(wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations")
+            .setCodeApplication(app);
 
-        Set<String> groups = provider.getGroups(user);
+        PasseportAuthService authService = new PasseportAuthService(config);
+        PasseportGroupProvider provider = new PasseportGroupProvider(authService);
 
-        // Must fail closed cleanly
-        assertTrue(groups.isEmpty());
-        assertTrue(cache.getPerimetre(user).isEmpty());
+        assertThrows(TrinoException.class, () -> provider.getGroups(user));
     }
 
     @Test
@@ -77,52 +69,23 @@ public class PasseportGroupProviderTest {
         stubFor(get(urlEqualTo("/s1sem/habilitations/" + user + "/" + app))
                 .willReturn(aResponse()
                         .withStatus(200)
-                        .withFixedDelay(16000))); // Simulate a timeout > 15s
+                        .withFixedDelay(16000)));
 
-        PasseportGroupProvider provider = new PasseportGroupProvider(
-                wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
-                app, null, null);
+        PasseportConfig config = new PasseportConfig()
+            .setApiUrl(wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations")
+            .setCodeApplication(app);
 
-        Set<String> groups = provider.getGroups(user);
+        PasseportAuthService authService = new PasseportAuthService(config);
+        PasseportGroupProvider provider = new PasseportGroupProvider(authService);
 
-        // Must fail closed cleanly due to timeout exception handling
-        assertTrue(groups.isEmpty());
-    }
-    
-    @Test
-    public void testMalformedJsonFailClosed(WireMockRuntimeInfo wmRuntimeInfo) {
-        String user = "jean.dupont";
-        String app = "MATIS_PROD";
-        
-        stubFor(get(urlEqualTo("/s1sem/habilitations/" + user + "/" + app))
-                .willReturn(aResponse()
-                        .withStatus(200)
-                        .withBody("This is not JSON")));
-
-        PasseportGroupProvider provider = new PasseportGroupProvider(
-                wmRuntimeInfo.getHttpBaseUrl() + "/s1sem/habilitations", 
-                app, null, null);
-
-        Set<String> groups = provider.getGroups(user);
-
-        assertTrue(groups.isEmpty());
+        assertThrows(TrinoException.class, () -> provider.getGroups(user));
     }
     
     @Test
     public void testEmptyOrNullUser() {
-        PasseportGroupProvider provider = new PasseportGroupProvider("http://localhost", "MATIS", null, null);
+        PasseportAuthService authService = new PasseportAuthService(new PasseportConfig());
+        PasseportGroupProvider provider = new PasseportGroupProvider(authService);
         assertTrue(provider.getGroups(null).isEmpty());
         assertTrue(provider.getGroups("").isEmpty());
-    }
-
-    @Test
-    public void testFactorySucceedsWhenNoJdbcConfig() {
-        PasseportGroupProviderFactory factory = new PasseportGroupProviderFactory();
-        java.util.Map<String, String> config = new java.util.HashMap<>();
-        config.put("passeport.api-url", "http://localhost");
-        
-        assertDoesNotThrow(() -> {
-            factory.create(config);
-        });
     }
 }

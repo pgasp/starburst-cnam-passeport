@@ -25,8 +25,13 @@ public final class PasseportFunctions {
         }
         
         String user = session.getUser();
-        List<String> perimetres = PasseportPerimetreCache.getInstance().getPerimetre(user);
+        PasseportAuthService authService = PasseportAuthService.getGlobalInstance();
         
+        if (authService == null) {
+            return createEmptyArray();
+        }
+        
+        List<String> perimetres = authService.getPerimetres(user);
         if (perimetres == null || perimetres.isEmpty()) {
             return createEmptyArray();
         }
@@ -59,10 +64,9 @@ public final class PasseportFunctions {
     @Description("Flushes the Passeport perimetre cache for a specific user (or all if null)")
     @SqlType(StandardTypes.BOOLEAN)
     public static boolean flushPasseportCache(@SqlNullable @SqlType(StandardTypes.VARCHAR) String user) {
-        if (user == null) {
-            PasseportPerimetreCache.getInstance().flushAll();
-        } else {
-            PasseportPerimetreCache.getInstance().flush(user);
+        PasseportAuthService authService = PasseportAuthService.getGlobalInstance();
+        if (authService != null) {
+            authService.flush(user);
         }
         return true;
     }
