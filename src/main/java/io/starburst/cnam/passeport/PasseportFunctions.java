@@ -47,19 +47,12 @@ public final class PasseportFunctions {
             return "null";
         }
         
-        String identityString = session.getIdentity().toString();
-        
-        // Example string: ConnectorIdentity{user='pascal.gasp', groups=[MATIS_ADMIN, MATIS_READER], principal=pascal.gasp, enabledSystemroles=[demo, public, demo2], extraCredentials=[...]}
-        String prefix = "enabledSystemroles=[";
-        int start = identityString.indexOf(prefix);
-        if (start != -1) {
-            int end = identityString.indexOf("]", start);
-            if (end != -1) {
-                return identityString.substring(start + prefix.length(), end);
-            }
+        java.util.Set<String> roles = session.getIdentity().getEnabledSystemRoles();
+        if (roles == null || roles.isEmpty()) {
+            return "";
         }
         
-        return "";
+        return String.join(", ", roles);
     }
     
     @ScalarFunction("flush_passeport_cache")
