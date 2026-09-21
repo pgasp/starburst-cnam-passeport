@@ -45,8 +45,10 @@ public class PasseportAuthCache {
 
     public void put(String upn, Set<String> groups, List<String> perimetres) {
         if (upn != null) {
-            cache.put(upn, new AuthData(groups != null ? groups : Collections.emptySet(), 
-                                        perimetres != null ? perimetres : Collections.emptyList()));
+            cache.put(upn, new AuthData(
+                groups != null ? Set.copyOf(groups) : Collections.emptySet(), 
+                perimetres != null ? List.copyOf(perimetres) : Collections.emptyList()
+            ));
         }
     }
 
