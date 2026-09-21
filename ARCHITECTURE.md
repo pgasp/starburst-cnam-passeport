@@ -16,7 +16,8 @@ graph TD
         SAC -->|5. Application des Filtres<br>Row-Level / Column-Level| Engine[Moteur de requête Trino]
     end
 
-    PGP <-->|3. Interrogation (avec Cache)| API_Passeport((API Passeport<br>Référentiel Externe))
+    PGP -->|3. Interrogation API / Cache| API_Passeport((API Passeport<br>Référentiel Externe))
+    API_Passeport -->|Retour JSON| PGP
     
     Engine -->|6. Accès Sécurisé| Tables[(Bases de données<br>Iceberg, Postgres...)]
 
