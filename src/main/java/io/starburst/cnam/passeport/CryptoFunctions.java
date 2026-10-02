@@ -70,12 +70,12 @@ public final class CryptoFunctions {
     @Description("Decrypts an AES-256-GCM encrypted assmac_act value for authorized callers; returns NULL on any error (fail-closed)")
     @SqlNullable
     @SqlType(StandardTypes.VARCHAR)
-    public static Slice decryptAssmac(@SqlType(StandardTypes.VARCHAR) String ciphertext) {
+    public static Slice decryptAssmac(@SqlType(StandardTypes.VARCHAR) Slice ciphertext) {
         if (ciphertext == null) {
             return null;
         }
         try {
-            return Slices.utf8Slice(AssmacCipher.decrypt(ciphertext));
+            return Slices.utf8Slice(AssmacCipher.decrypt(ciphertext.toStringUtf8()));
         } catch (Exception e) {
             log.log(Level.FINE, "Failed to decrypt ciphertext. Returning NULL.", e);
             return null;
