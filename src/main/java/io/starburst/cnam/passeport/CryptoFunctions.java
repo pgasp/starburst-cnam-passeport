@@ -75,10 +75,18 @@ public final class CryptoFunctions {
             return null;
         }
         try {
-            return Slices.utf8Slice(AssmacCipher.decrypt(ciphertext.toStringUtf8()));
+            return AssmacCipher.decrypt(ciphertext);
         } catch (Exception e) {
             log.log(Level.FINE, "Failed to decrypt ciphertext. Returning NULL.", e);
             return null;
         }
+    }
+
+    @ScalarFunction("dummy_hello")
+    @Description("Dummy function returning a constant string to test framework performance")
+    @SqlNullable
+    @SqlType(StandardTypes.VARCHAR)
+    public static Slice dummyHello(@SqlType(StandardTypes.VARCHAR) Slice input) {
+        return Slices.utf8Slice("hello world");
     }
 }
