@@ -6,7 +6,7 @@
 
     <groupId>io.starburst.cnam</groupId>
     <artifactId>passeport-group-provider</artifactId>
-    <version>3.0.0</version>
+    <version>3.0.14</version>
     <packaging>trino-plugin</packaging>
 
     <properties>
