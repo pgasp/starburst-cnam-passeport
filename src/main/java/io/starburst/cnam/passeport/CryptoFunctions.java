@@ -66,6 +66,29 @@ public final class CryptoFunctions {
         }
     }
 
+    private static final byte[] HEX_UPPER = "0123456789ABCDEF".getBytes(StandardCharsets.US_ASCII);
+    private static final byte SEPARATOR = (byte) '|';
+
+    @ScalarFunction("hash_user_salt")
+    @Description("Equivalent of to_hex(sha256(to_utf8(value || '|' || salt))): SHA-256 hex digest in upper case. NULL in, NULL out. Usage: hash_user_salt(benidf_act, current_user)")
+    @SqlType(StandardTypes.VARCHAR)
+    public static Slice hashUserSalt(@SqlType(StandardTypes.VARCHAR) Slice value, @SqlType(StandardTypes.VARCHAR) Slice salt) {
+        MessageDigest digest = SHA256.get();
+        digest.reset();
+        digest.update(value.toByteBuffer());
+        digest.update(SEPARATOR);
+        digest.update(salt.toByteBuffer());
+        byte[] hash = digest.digest();
+
+        byte[] hex = new byte[hash.length * 2];
+        for (int i = 0; i < hash.length; i++) {
+            int v = hash[i] & 0xFF;
+            hex[i * 2] = HEX_UPPER[v >>> 4];
+            hex[i * 2 + 1] = HEX_UPPER[v & 0x0F];
+        }
+        return Slices.wrappedBuffer(hex);
+    }
+
     @ScalarFunction("decrypt_assmac")
     @Description("Decrypts an AES-256-GCM encrypted assmac_act value for authorized callers; returns NULL on any error (fail-closed)")
     @SqlNullable
