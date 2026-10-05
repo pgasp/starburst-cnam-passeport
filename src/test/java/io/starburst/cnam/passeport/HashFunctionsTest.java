@@ -8,13 +8,13 @@ import java.security.MessageDigest;
 import java.util.HexFormat;
 import org.junit.jupiter.api.Test;
 
-public class HashUserSaltTest {
+public class HashFunctionsTest {
 
     // Valeur calculée par le cluster : SELECT to_hex(sha256(to_utf8('benidf1' || '|' || 'pascal.gasp')))
     private static final String CLUSTER_REFERENCE = "659EF9D3BB03D5ECBF3BCB869F9B190464958942A384637ECEDFDE07ABC673F6";
 
     private static String call(String value, String salt) {
-        return CryptoFunctions.hashUserSalt(Slices.utf8Slice(value), Slices.utf8Slice(salt)).toStringUtf8();
+        return HashFunctions.hashUserSalt(Slices.utf8Slice(value), Slices.utf8Slice(salt)).toStringUtf8();
     }
 
     @Test

@@ -23,7 +23,7 @@ This file contains repository-specific guidance for AI agents working on this pr
   - `PasseportPlugin.java`: Registers components.
   - `PasseportGroupProvider.java`: Fetches roles from the API (Fail-Closed design by default).
   - `PasseportSystemAccessControl.java`: Applies security filtering rules.
-  - `PasseportFunctions.java` & `CryptoFunctions.java`: Custom SQL UDFs.
+  - `PasseportFunctions.java` (`passeport_perimetre`, `current_user_biac_roles`) & `HashFunctions.java` (`hash_user_salt`): Custom SQL UDFs.
 
 ## Important Quirks
 - **Fail-Closed Model**: The GroupProvider is designed to return 0 groups if the external API is unreachable, avoiding cluster crashes while blocking unauthorized access. Do not alter this design unless explicitly requested.

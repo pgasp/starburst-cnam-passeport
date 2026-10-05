@@ -56,8 +56,6 @@ passeport.row-filter-mappings=iceberg.coeurdata.vact:caiexe_act,iceberg.coeurdat
 # Recommandation : laissez vide pour utiliser l'Invoker rights et préserver le contexte BIAC
 # passeport.service-account=starburst_service
 
-# (Optionnel) Clé de déchiffrement pour la fonction decrypt_assmac() — voir section 3.3.
-# passeport.assmac-encryption-key=${ENV:ERASME_ASSMAC_KEY}
 ```
 
 ### 3.2. Chaînage avec BIAC (Coordinateur)
@@ -69,42 +67,22 @@ Modifiez le fichier `etc/config.properties` de votre coordinateur pour chaîner 
 access-control.config-files=etc/biac.properties,etc/passeport-access-control.properties
 ```
 
-### 3.3. Déchiffrement de colonne — `decrypt_assmac()`
+### 3.3. Hachage salé par utilisateur — `hash_user_salt()`
 
-Depuis l'exigence CoeurDATA du 18/09/2026 (voir la note `2026-09-18 - Plan Implementation
-Chiffrement AES-256 assmac_act (erasme_5M).md` côté vault), le plugin expose une fonction
-scalaire `decrypt_assmac(VARCHAR) -> VARCHAR` qui déchiffre une valeur chiffrée en amont
-(à l'ingestion, hors plugin) et retourne le texte en clair aux appelants autorisés.
+Le plugin expose une fonction scalaire `hash_user_salt(VARCHAR, VARCHAR) -> VARCHAR` équivalente à
+`to_hex(sha256(to_utf8(valeur || '|' || sel)))` (SHA-256 en hexadécimal **majuscule**, comme `to_hex`).
+Elle sert à masquer un identifiant tout en gardant une valeur stable par utilisateur :
 
-**Chiffrement (hors plugin)** : la colonne cible (ex: `assmac_act`) doit être chiffrée en
-AES-256-GCM avant chargement — IV/nonce aléatoire de 12 octets par valeur, tag GCM (16 octets)
-laissé accolé au ciphertext par le chiffreur, aucune AAD. Valeur stockée :
-`base64(IV(12) || ciphertext_avec_tag)`. Un exemple d'implémentation Python (`cryptography.AESGCM`)
-et Java (`AssmacCipher`, ce même plugin) suit exactement ce contrat.
-
-**Configuration** : ajoutez la clé AES-256 (32 octets bruts, encodée en base64) dans
-`etc/passeport-access-control.properties` :
-
-```properties
-passeport.assmac-encryption-key=${ENV:ERASME_ASSMAC_KEY}
+```sql
+hash_user_salt(benidf_act, current_user)
 ```
 
-- La clé n'est **jamais** stockée en clair dans un fichier versionné — utilisez la substitution
-  `${ENV:...}` de Trino pour l'injecter via une variable d'environnement au démarrage du
-  coordinateur.
-- Si la propriété est absente ou vide, `decrypt_assmac()` reste utilisable syntaxiquement mais
-  échoue systématiquement (fail-closed, voir section 4) faute de clé chargée.
-- Si la valeur fournie n'est pas un base64 valide, ou ne décode pas en exactement 32 octets, le
-  plugin refuse de démarrer (`IllegalArgumentException` au chargement de la configuration) plutôt
-  que de démarrer silencieusement avec une clé invalide.
-
-**Contrôle d'accès BIAC** : `decrypt_assmac()` doit recevoir un grant `EXECUTE` **précis**,
-scopé sur `{"category":"FUNCTIONS","catalog":"system","schema":"builtin","function":"decrypt_assmac"}`
-— jamais `allEntities:true` (fuite de visibilité catalogue). Ce grant ne s'hérite **pas** via le
-nesting de rôles BIAC (bug documenté sur ce projet, cf. note du 15/09) : accordez-le directement
-à chaque rôle qui doit déchiffrer, pas seulement au rôle composite parent. Exposition recommandée :
-un column mask BIAC (`decrypt_assmac(assmac_act)`) attaché uniquement aux rôles autorisés, plutôt
-qu'un appel explicite laissé à la discrétion de chaque requête.
+- Une entrée `NULL` (valeur ou sel) donne `NULL`, comme l'expression SQL d'origine.
+- Aucune configuration : pas de clé, pas de sel codé en dur. Le sel est le second argument (typiquement `current_user`).
+- **Contrôle d'accès BIAC** : la fonction demande un grant `EXECUTE` **précis**, scopé sur
+  `{"category":"FUNCTIONS","catalog":"system","schema":"builtin","function":"hash_user_salt"}` — jamais `allEntities:true`.
+  Ce grant ne s'hérite **pas** via le nesting de rôles BIAC : accordez-le à chaque rôle concerné.
+- Exposition recommandée : un column mask BIAC (`hash_user_salt(benidf_act, current_user)`) plutôt qu'un appel laissé à chaque requête.
 
 ---
 
@@ -113,4 +91,3 @@ qu'un appel explicite laissé à la discrétion de chaque requête.
 * **Tolérance aux pannes API** : Si l'API Passeport est injoignable ou en timeout, le plugin adopte une politique "Fail-Closed". La liste des groupes retournée sera vide, et aucun périmètre ne sera placé en cache.
 * **Sécurité RLS (Fail-Closed)** : Lorsqu'un utilisateur exécute une requête sur une table sécurisée, le plugin vérifie son identité dans le cache mémoire. S'il ne le trouve pas (expiration, ou erreur API précédente), le filtre injecté sera strictement `FALSE`. Ainsi, **aucune donnée n'est renvoyée**, interdisant toute fuite d'information.
 * **Performances** : Grâce à l'utilisation du cache, le moteur Trino construit la requête SQL avec une clause statique très rapide (ex: `WHERE caiexe_act IN ('01', '02')`) plutôt qu'une sous-requête, allégeant la charge du coordinateur et des workers.
-* **Déchiffrement (Fail-Closed)** : `decrypt_assmac()` ne lève jamais d'exception visible côté client et ne renvoie jamais de texte partiel. Toute erreur (clé absente/invalide, ciphertext corrompu, tag GCM invalide) renvoie `NULL` — l'appelant voit une valeur manquante, jamais une donnée partiellement déchiffrée ni un message d'erreur révélant la nature du problème.

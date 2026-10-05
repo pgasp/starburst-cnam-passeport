@@ -23,7 +23,6 @@ import io.trino.spi.security.TrinoPrincipal;
 import io.trino.spi.security.ViewExpression;
 import io.trino.spi.type.Type;
 import java.security.Principal;
-import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -60,22 +59,6 @@ public class PasseportSystemAccessControl implements SystemAccessControl {
                     }
                 }
             }
-        }
-        
-        // Initialiser la clef AES globalement si on l'a configuree. 
-        // Note: AssmacCipher est statique dans le design actuel, c'est acceptable tant qu'il y a un seul process Trino.
-        String assmacEncryptionKey = config.getAssmacEncryptionKey();
-        if (assmacEncryptionKey != null && !assmacEncryptionKey.isEmpty()) {
-            byte[] rawKey;
-            try {
-                rawKey = Base64.getDecoder().decode(assmacEncryptionKey);
-            } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("passeport.assmac-encryption-key must be valid base64", e);
-            }
-            if (rawKey.length != 32) {
-                throw new IllegalArgumentException("passeport.assmac-encryption-key must decode to exactly 32 bytes (AES-256), got " + rawKey.length);
-            }
-            AssmacCipher.setKey(rawKey);
         }
     }
 

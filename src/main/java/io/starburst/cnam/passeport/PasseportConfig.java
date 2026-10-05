@@ -9,7 +9,6 @@ public class PasseportConfig {
     private String trustStorePassword;
     private String rowFilterMappings = "";
     private String serviceAccount;
-    private String assmacEncryptionKey = "";
 
     public String getApiUrl() { return apiUrl; }
     @Config("passeport.api-url")
@@ -35,7 +34,4 @@ public class PasseportConfig {
     @Config("passeport.service-account")
     public PasseportConfig setServiceAccount(String serviceAccount) { this.serviceAccount = serviceAccount; return this; }
 
-    public String getAssmacEncryptionKey() { return assmacEncryptionKey; }
-    @Config("passeport.assmac-encryption-key")
-    public PasseportConfig setAssmacEncryptionKey(String assmacEncryptionKey) { this.assmacEncryptionKey = assmacEncryptionKey; return this; }
 }
