@@ -14,7 +14,7 @@ This file contains repository-specific guidance for AI agents working on this pr
 - **Java Version**: **Java 25** (`pom.xml` source/target = 25, same as the Java 25 runtime of SEP 482-e). Build with a JDK 25 : `JAVA_HOME=$(brew --prefix openjdk@25) mvn clean package`. A JDK 23 (default `JAVA_HOME` on this machine) fails with class-file version errors.
 - **Build Command**: `mvn clean package`
 - **Test Command**: `mvn test` (Tests use JUnit 5, WireMock, and Mockito).
-- **Packaging**: Uses `trino-maven-plugin` and `maven-assembly-plugin` (`src/main/assembly/plugin.xml`) to build a deployment-ready plugin directory/archive in `target/`.
+- **Packaging**: `trino-maven-plugin` (provisio) alone builds the deployable zip `target/<artifact>-<version>.zip` (folder with the plugin jar, `-services.jar` carrying `META-INF/services/io.trino.spi.Plugin`, and dependencies). Do NOT add a `maven-assembly-plugin` execution: it rewrites a zip of the same name that nests the first one, with no plugin jar (Trino then fails with `No service providers of type io.trino.spi.Plugin`; this broke releases 3.0.14 to 3.0.18). Check a package with `unzip -l`: it must list `<artifact>-<version>.jar` and `-services.jar`, and no `.zip` entry.
 
 ## Trino SPI Conventions
 - **Scope**: Trino SPI dependencies (`io.trino:trino-spi`) and OpenTelemetry must be strictly `<scope>provided</scope>` in `pom.xml`.
