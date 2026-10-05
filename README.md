@@ -18,7 +18,7 @@ Le plugin (`passeport-group-provider`) est packagé dans un seul `.jar` et expos
 
 ## 🛠️ Build & Compilation
 
-Le projet utilise Maven et nécessite un JDK 17 minimum (compatible avec le bytecode de Trino 480).
+Le projet utilise Maven et nécessite un **JDK 25** (même version que le runtime de SEP 482-e) : `JAVA_HOME=$(brew --prefix openjdk@25) mvn clean package`.
 
 ```bash
 # Compilation et exécution des tests unitaires

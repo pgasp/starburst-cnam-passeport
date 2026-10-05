@@ -15,6 +15,18 @@
         <trino.version>482</trino.version>
     </properties>
 
+    <dependencyManagement>
+        <dependencies>
+            <!-- io.airlift:configuration tire byte-buddy 1.14.0, qui ne sait pas lire la version de Java 25
+                 (Mockito 5.20 en exige >= 1.17.7). Aligné sur la version de Mockito. -->
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy</artifactId>
+                <version>1.17.7</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>io.trino</groupId>
@@ -82,7 +94,7 @@
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
-            <version>5.7.0</version>
+            <version>5.20.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>
