@@ -20,6 +20,6 @@ public class PasseportPlugin implements Plugin {
 
     @Override
     public Set<Class<?>> getFunctions() {
-        return com.google.common.collect.ImmutableSet.of(PasseportFunctions.class, HashFunctions.class);
+        return com.google.common.collect.ImmutableSet.of(PasseportFunctions.class, HashFunctions.class, PseudonymizeFunctions.class);
     }
 }

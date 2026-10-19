@@ -13,6 +13,45 @@ Le plugin (`passeport-group-provider`) est packagé dans un seul `.jar` et expos
    - `passeport_perimetre()` : UDF lisant un cache en mémoire pour renvoyer le périmètre autorisé (liste des caisses) de l'utilisateur courant (via l'identité de session, méthode sécurisée).
    - `passport_biac_roles()` : UDF de débogage et d'audit qui retourne la liste des rôles système (`enabledSystemRoles`) activés pour la session courante (renvoie une chaîne de caractères formatée).
    - `flush_passeport_cache(varchar)` : UDF d'administration permettant de purger le cache d'un utilisateur à chaud.
+   - `hash_user_salt(varchar, varchar)` : `to_hex(sha256(valeur || '|' || sel))` en majuscules.
+   - `pseudonymize(varchar)` : pseudonyme déterministe HMAC-SHA256 à clé secrète (voir la section dédiée ci-dessous).
+
+---
+
+## 🔑 UDF `pseudonymize(varchar) -> varchar` (pseudonymisation HMAC-SHA256 à clé secrète)
+
+Pseudonymisation déterministe des numéros techniques (n° employeur, sinistre, SIRET, matricules assuré / bénéficiaire).
+Même valeur + même clé = même pseudonyme, quelle que soit la table : les jointures entre tables pseudonymisées restent possibles.
+
+```sql
+SELECT pseudonymize(benidf_act) AS benidf_pseudo FROM iceberg.erasme_5m.vact;
+SELECT pseudonymize(NULL);   -- NULL
+SELECT pseudonymize('  ab12 ') = pseudonymize('AB12');   -- true (normalisation)
+```
+
+### Algorithme et format
+- `javax.crypto.Mac` `HmacSHA256` (JDK, aucune crypto maison), validé par les vecteurs de test RFC 4231 (cas 1, 2, 3, 4, 6, 7).
+- Normalisation d'entrée, appliquée avant le HMAC : `strip()` (espaces de début et de fin) puis majuscules (`Locale.ROOT`). Les espaces internes sont conservés.
+- Encodage de sortie : les 32 octets du HMAC en hexadécimal majuscule, soit 64 caractères (même convention que `hash_user_salt`). Pas de troncature.
+- `NULL` en entrée donne `NULL`. Une valeur vide après `strip()` donne aussi `NULL` (sinon toutes les valeurs vides partageraient un pseudonyme constant et seraient jointes entre elles).
+- Thread-safe : un `Mac` par thread (`ThreadLocal`), clé lue une fois par JVM.
+
+### Clé : variable d'environnement `PSEUDONYMIZATION_HMAC_KEY`
+- Valeur attendue : clé de **32 octets minimum encodée en hexadécimal** (64 caractères hexadécimaux ou plus). Jamais en dur dans le code, la configuration ou ce dépôt ; jamais écrite dans un log ni dans un message d'erreur.
+- Elle est fournie par un secret Kubernetes injecté dans l'environnement du coordinator **et** des workers (`envFrom` / `secretKeyRef`, cf. issue #9 du dépôt `starburst-sa-agents-poc`). Le coordinator en a besoin : Trino y évalue les appels à arguments constants (constant folding).
+- **Fail closed** : variable absente, vide, non hexadécimale ou trop courte = erreur `CONFIGURATION_INVALID` explicite (le message nomme la variable, jamais sa valeur). La requête échoue ; jamais de valeur en clair ni de hash sans clé.
+- La clé est lue au premier appel puis conservée pour la durée de vie du processus : un changement de secret n'est pris en compte qu'après redémarrage du coordinator et des workers.
+
+### Rotation de clé
+Changer la clé change **tous** les pseudonymes : les valeurs déjà pseudonymisées (tables copiées, Data Products matérialisés) ne sont plus
+jointes avec celles produites par la nouvelle clé. Une rotation impose de recalculer l'ensemble des colonnes pseudonymisées avec la nouvelle clé
+(recopie complète), et de redémarrer le coordinator et les workers. Conserver l'ancienne clé le temps de la migration si l'on doit comparer
+anciennes et nouvelles valeurs ; le plugin ne gère qu'une seule clé active à la fois.
+
+### Limite de sécurité (à connaître avant exposition)
+Un utilisateur qui peut **exécuter** l'UDF (privilège `EXECUTE` BIAC) peut pseudonymiser un matricule connu et le retrouver dans les données :
+réidentification par dictionnaire sur un identifiant à format connu. Ne pas accorder `EXECUTE` aux utilisateurs finaux ; appliquer la
+pseudonymisation côté compte technique (copie) ou dans un masque / une vue exécutée sous l'identité du propriétaire.
 
 ---
 
