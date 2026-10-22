@@ -1,0 +1,13 @@
+<!-- Fichiers de documentation ajoutés au dossier du plugin dans le zip (à côté des jars).
+     Ils sont placés DANS le dossier racine du zip, pas à côté : le zip garde ainsi une racine unique
+     (<artifactId>-<version>/), ce que supposent les outils de déploiement qui décompressent dans plugin/.
+     LICENSE* et NOTICE* sont repris s'ils existent un jour (aucun n'existe à ce jour). -->
+<assembly>
+    <fileSet to="/">
+        <directory path="${basedir}">
+            <include>INTEGRATION.md</include>
+            <include>LICENSE*</include>
+            <include>NOTICE*</include>
+        </directory>
+    </fileSet>
+</assembly>
