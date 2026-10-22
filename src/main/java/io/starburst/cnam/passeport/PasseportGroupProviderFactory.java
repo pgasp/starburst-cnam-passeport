@@ -25,7 +25,7 @@ public class PasseportGroupProviderFactory implements GroupProviderFactory {
                 
             return injector.getInstance(PasseportGroupProvider.class);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize PasseportGroupProvider", e);
+            throw new RuntimeException(PasseportModule.startupFailureMessage("Passeport group provider", e), e);
         }
     }
 }

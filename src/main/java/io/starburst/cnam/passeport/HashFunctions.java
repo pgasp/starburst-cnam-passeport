@@ -28,7 +28,7 @@ public final class HashFunctions {
     private HashFunctions() {}
 
     @ScalarFunction("hash_user_salt")
-    @Description("Equivalent of to_hex(sha256(to_utf8(value || '|' || salt))): SHA-256 hex digest in upper case. NULL in, NULL out. Usage: hash_user_salt(benidf_act, current_user)")
+    @Description("Equivalent of to_hex(sha256(to_utf8(value || '|' || salt))): SHA-256 hex digest in upper case. NULL in, NULL out. Usage: hash_user_salt(col, current_user)")
     @SqlType(StandardTypes.VARCHAR)
     public static Slice hashUserSalt(@SqlType(StandardTypes.VARCHAR) Slice value, @SqlType(StandardTypes.VARCHAR) Slice salt)
     {

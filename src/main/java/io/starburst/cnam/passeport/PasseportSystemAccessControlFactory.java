@@ -25,7 +25,7 @@ public class PasseportSystemAccessControlFactory implements SystemAccessControlF
                 
             return injector.getInstance(PasseportSystemAccessControl.class);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize PasseportSystemAccessControl", e);
+            throw new RuntimeException(PasseportModule.startupFailureMessage("Passeport system access control", e), e);
         }
     }
 }
