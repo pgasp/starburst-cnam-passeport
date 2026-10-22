@@ -48,7 +48,7 @@ Vérification, avant installation :
 ### Flux réseau vers l'API
 
 - Le **coordinator** appelle l'API Passeport en HTTP(S) (les workers n'appellent pas l'API : la configuration du group provider n'est lue que par le coordinator).
-- Ouvrir le flux du pod coordinator vers l'hôte et le port de l'API (NetworkPolicy, pare-feu, proxy éventuel). Le plugin n'utilise pas de proxy : l'accès doit être direct.
+- Ouvrir le flux du pod coordinator vers l'hôte et le port de l'API (NetworkPolicy, pare-feu, proxy éventuel). Le plugin ne configure pas de proxy : un éventuel proxy d'entreprise ne serait pris en compte que par les propriétés système standard de la JVM (`https.proxyHost`, `https.proxyPort`, `http.nonProxyHosts`), à fournir dans les options Java du coordinator. Le plus simple est un accès direct.
 - Le plugin n'envoie aucun en-tête d'authentification (voir section 6).
 - Délais : 10 s pour la connexion, 15 s pour la réponse.
 
