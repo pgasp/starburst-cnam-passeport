@@ -1,30 +1,23 @@
-# Agent Instructions
+# Instructions pour les agents
 
-This file contains repository-specific guidance for AI agents working on this project. 
+## Projet
+- **Type** : plugin Trino / Starburst Enterprise (SEP), SPI 482, Java 25.
+- **Objet** : group provider et fonctions SQL branchés sur l'API d'habilitations Passeport. Voir `README.md` (composants, build) et `INTEGRATION.md` (installation, configuration, recette, destiné aux équipes techniques du client).
 
-## Project Overview
-- **Type**: Custom Trino / Starburst Enterprise (SEP) plugin.
-- **Purpose**: Integrates with the CNAM "Passeport" REST API for authentication, group provisioning, and data filtering (Row-Level Security).
-- **Architecture**: 
-  - Consult `ARCHITECTURE.md` for the security flow and cluster integration details.
-  - Consult `CONFIGURATION.md` for plugin properties (e.g., `etc/group-provider.properties`).
+## Build et tests
+- Maven, **JDK 25 obligatoire** (`pom.xml` : source et target 25). Avec un JDK plus ancien : erreurs de version de fichier de classe.
+- `mvn clean verify` : compile, exécute les tests (JUnit 5, WireMock, Mockito) et construit le zip.
+- Packaging : `trino-maven-plugin` (provisio) seul produit `target/<artifact>-<version>.zip`. Ne pas ajouter de `maven-assembly-plugin` (zip imbriqué sans jar de plugin : `No service providers of type io.trino.spi.Plugin`). Contrôler avec `unzip -l` : `<artifact>-<version>.jar` et `-services.jar` présents, aucune entrée `.zip`.
+- Changer la version du `pom.xml` avant tout build destiné à une release ; ne jamais écraser une release existante.
 
-## Build & Test
-- **Build Tool**: Maven
-- **Java Version**: **Java 25** (`pom.xml` source/target = 25, same as the Java 25 runtime of SEP 482-e). Build with a JDK 25 : `JAVA_HOME=$(brew --prefix openjdk@25) mvn clean package`. A JDK 23 (default `JAVA_HOME` on this machine) fails with class-file version errors.
-- **Build Command**: `mvn clean package`
-- **Test Command**: `mvn test` (Tests use JUnit 5, WireMock, and Mockito).
-- **Packaging**: `trino-maven-plugin` (provisio) alone builds the deployable zip `target/<artifact>-<version>.zip` (folder with the plugin jar, `-services.jar` carrying `META-INF/services/io.trino.spi.Plugin`, and dependencies). Do NOT add a `maven-assembly-plugin` execution: it rewrites a zip of the same name that nests the first one, with no plugin jar (Trino then fails with `No service providers of type io.trino.spi.Plugin`; this broke releases 3.0.14 to 3.0.18). Check a package with `unzip -l`: it must list `<artifact>-<version>.jar` and `-services.jar`, and no `.zip` entry.
+## Conventions SPI
+- `trino-spi`, Jackson (annotations) et OpenTelemetry en `<scope>provided</scope>`.
+- API Trino 482 : ne pas utiliser d'anciennes conventions (contextes de sécurité historiques, anciens registres de fonctions).
+- Dépendances embarquées : seulement ce que le plugin charge réellement (airlift configuration/bootstrap, Guice, Guava, Jackson databind, validation). Après tout changement de dépendances, vérifier le contenu du zip et charger `PasseportGroupProviderFactory` sur le seul classpath du zip.
+- Classes : `PasseportPlugin` (enregistrement), `PasseportGroupProvider` / `PasseportAuthService` (appel API, cache Guava) / `PasseportResponseParser` (lecture de la réponse) / `PasseportConfig` (propriétés), `PasseportFunctions`, `HashFunctions`, `PseudonymizeFunctions` + `Pseudonymizer`, `PasseportSystemAccessControl`.
 
-## Trino SPI Conventions
-- **Scope**: Trino SPI dependencies (`io.trino:trino-spi`) and OpenTelemetry must be strictly `<scope>provided</scope>` in `pom.xml`.
-- **API Versions**: This project uses Trino `482`. The `io.trino.spi.*` interfaces change frequently. Do not use older Presto or Trino API conventions (e.g., legacy security contexts or function registries).
-- **Extensibility**:
-  - `PasseportPlugin.java`: Registers components.
-  - `PasseportGroupProvider.java`: Fetches roles from the API (Fail-Closed design by default).
-  - `PasseportSystemAccessControl.java`: Applies security filtering rules.
-  - `PasseportFunctions.java` (`passeport_perimetre`, `current_user_biac_roles`) & `HashFunctions.java` (`hash_user_salt`) & `PseudonymizeFunctions.java` / `Pseudonymizer.java` (`pseudonymize`, HMAC-SHA256, key from env `PSEUDONYMIZATION_HMAC_KEY`, fail closed): Custom SQL UDFs.
-
-## Important Quirks
-- **Fail-Closed Model**: The GroupProvider is designed to return 0 groups if the external API is unreachable, avoiding cluster crashes while blocking unauthorized access. Do not alter this design unless explicitly requested.
-- **Documentation**: Trust executable configs (`pom.xml`) over prose (e.g., if `README.md` says a JDK version that differs from `pom.xml`, trust `pom.xml`).
+## Points importants
+- **Fail closed** : une erreur d'API (code différent de 200, délai dépassé, structure de réponse inattendue) lève une `TrinoException` et fait échouer la requête ; l'échec n'est pas mis en cache. Ne pas changer ce comportement sans demande explicite.
+- `passeport.api-url` et `passeport.code-application` sont obligatoires, sans valeur par défaut ; ne jamais réintroduire de valeur par défaut propre à un client.
+- Aucun nom d'hôte, de table, de colonne ou d'utilisateur réel dans le code, les tests ni la documentation : utiliser des exemples génériques (`passeport.example.org`, `catalog.schema.table`, `user.test`).
+- En cas de doute entre la documentation et `pom.xml` / le code, faire confiance au code.
