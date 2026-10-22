@@ -10,7 +10,7 @@ Ce document couvre le group provider et la fonction SQL de périmètre, pour les
 
 ### Ce que fait le plugin
 
-- **Group provider `passeport`** : à chaque requête SQL, SEP demande au plugin les groupes de l'utilisateur. Le plugin interroge l'API Passeport avec l'UPN de l'utilisateur et le `code_application` configuré, et renvoie les codes profil (`code_pa`) comme groupes. SEP fait correspondre le nom de chaque groupe au nom d'un rôle BIAC.
+- **Group provider `passeport`** : à chaque requête SQL, SEP demande au plugin les groupes de l'utilisateur. Le plugin interroge l'API Passeport avec l'UPN de l'utilisateur et le `code_application` configuré, et renvoie les codes profil (`code_pa`) comme groupes. Dans BIAC, des rôles sont assignés à ces groupes (section 7).
 - **Fonction SQL `passeport_perimetre()`** : renvoie, sous forme de `array(varchar)`, le périmètre (par exemple les caisses) de l'utilisateur courant, issu de la même réponse de l'API. Elle sert dans un row filter BIAC.
 - Les groupes et le périmètre sont gardés en mémoire (cache) pendant une durée configurable (15 minutes par défaut).
 - En cas d'erreur de l'API, la requête échoue (fail closed, voir section 8).
@@ -115,9 +115,9 @@ Le dossier du plugin doit se trouver sous `/usr/lib/starburst/plugin/` (un sous-
 
 ### Option A : initContainer qui télécharge le zip depuis le dépôt d'artefacts interne
 
-L'initContainer télécharge le zip depuis le dépôt d'artefacts de la CNAM, vérifie le SHA-256, décompresse dans un volume `emptyDir`, qui est monté dans le dossier `plugin/` du conteneur SEP.
+L'initContainer télécharge le zip depuis le dépôt d'artefacts de la CNAM, vérifie le SHA-256 et décompresse dans un volume `emptyDir` nommé, monté dans l'initContainer. Le conteneur SEP monte le même volume, et son script de démarrage copie le dossier du plugin dans `/usr/lib/starburst/plugin/` avant de lancer SEP.
 
-Extrait de values générique, à adapter à la version du chart (les clés `initContainers`, `additionalVolumes`, `env` et `envFrom` peuvent différer) :
+Extrait de values générique. **Les clés exactes (`initContainers`, `additionalVolumes`, `initFile`, `volumeMounts`) dépendent de la version du chart** : à adapter.
 
 ```yaml
 coordinator:
@@ -130,9 +130,17 @@ coordinator:
       args:
         - |
           set -eu
-          wget -O /tmp/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.22.zip"
-          echo "<sha256-communique-avec-le-livrable>  /tmp/passeport.zip" | sha256sum -c -
-          unzip -o -j /tmp/passeport.zip -d /usr/lib/starburst/plugin/passeport
+          mkdir -p /mnt/plugin-staging
+          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.22.zip"
+          echo "<sha256-communique-avec-le-livrable>  /mnt/plugin-staging/passeport.zip" | sha256sum -c -
+          rm -rf /mnt/plugin-staging/passeport
+          mkdir -p /mnt/plugin-staging/passeport
+          unzip -o /mnt/plugin-staging/passeport.zip -d /mnt/plugin-staging/passeport/
+      # Si le chart ne monte pas automatiquement les volumes déclarés dans additionalVolumes
+      # dans les initContainers, déclarer le montage explicitement :
+      # volumeMounts:
+      #   - name: plugin-staging
+      #     mountPath: /mnt/plugin-staging
       securityContext:
         runAsNonRoot: true
         allowPrivilegeEscalation: false
@@ -147,29 +155,46 @@ worker:
       args:
         - |
           set -eu
-          wget -O /tmp/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.22.zip"
-          echo "<sha256-communique-avec-le-livrable>  /tmp/passeport.zip" | sha256sum -c -
-          unzip -o -j /tmp/passeport.zip -d /usr/lib/starburst/plugin/passeport
+          mkdir -p /mnt/plugin-staging
+          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.22.zip"
+          echo "<sha256-communique-avec-le-livrable>  /mnt/plugin-staging/passeport.zip" | sha256sum -c -
+          rm -rf /mnt/plugin-staging/passeport
+          mkdir -p /mnt/plugin-staging/passeport
+          unzip -o /mnt/plugin-staging/passeport.zip -d /mnt/plugin-staging/passeport/
       securityContext:
         runAsNonRoot: true
         allowPrivilegeEscalation: false
         capabilities:
           drop: ["ALL"]
 
-# Volume partagé entre l'initContainer et le conteneur SEP : le chemin donné est le dossier
-# du plugin. Le chart doit le monter dans les initContainers et dans le conteneur principal.
+# emptyDir partagé entre les initContainers et le conteneur SEP (coordinator et workers).
 additionalVolumes:
-  - path: /usr/lib/starburst/plugin/passeport
+  - path: /mnt/plugin-staging
     volume:
       emptyDir: {}
+
+# Script de démarrage du conteneur SEP (coordinator et workers) : copie du dossier du plugin
+# dans plugin/, puis lancement de SEP. Adapter à la façon dont votre chart permet de remplacer
+# la commande de démarrage (par exemple initFile).
+initFile: |
+  #!/bin/bash
+  set -eu
+  src=/mnt/plugin-staging/passeport
+  # le zip contient un dossier racine unique : on copie son contenu à plat dans le dossier du plugin
+  sub="$(ls -1A "$src" | head -1)"
+  if [ "$(ls -1A "$src" | wc -l)" = "1" ] && [ -d "$src/$sub" ]; then src="$src/$sub"; fi
+  rm -rf /usr/lib/starburst/plugin/passeport
+  mkdir -p /usr/lib/starburst/plugin/passeport
+  cp -r "$src"/. /usr/lib/starburst/plugin/passeport/
+  exec /usr/lib/starburst/bin/run-starburst
 ```
 
 Points d'attention :
 
-- `unzip -j` met les fichiers à plat dans le dossier du plugin (le zip contient un dossier racine unique).
+- Dans cet extrait, l'initContainer et le conteneur SEP échangent uniquement par l'`emptyDir` : c'est le script de démarrage qui place les fichiers dans `/usr/lib/starburst/plugin/passeport`. Une variante consiste à monter directement l'`emptyDir` dans ce dossier, si le chart le permet.
 - Si la vérification du SHA-256 échoue, l'initContainer s'arrête en erreur et le pod ne démarre pas : c'est le comportement voulu.
+- Si le chart propose déjà un `initFile` ou une commande de démarrage personnalisée, y insérer la copie plutôt que de le remplacer, et conserver l'appel final à `run-starburst`.
 - Sur OpenShift, les pods s'exécutent avec un UID attribué par la plateforme : l'`emptyDir` doit être inscriptible par ce UID (`fsGroup` ou politique SCC en vigueur) et l'image de l'initContainer ne doit pas exiger root.
-- Le `/tmp` de l'initContainer doit être inscriptible ; sinon monter un second `emptyDir`.
 
 ### Option B : image dérivée
 
@@ -280,16 +305,26 @@ Règles de lecture :
 
 ### Correspondance 1:1 entre groupe Passeport et rôle BIAC
 
-SEP fait correspondre le nom de chaque groupe renvoyé par le group provider au rôle BIAC de **même nom** (la documentation Starburst indique que les noms affichés par `SELECT current_groups()` sont ceux qui sont mis en correspondance avec les rôles BIAC). Le principe retenu : un `code_pa` Passeport correspond à un seul rôle BIAC, et inversement.
+SEP n'associe **pas** automatiquement un groupe au rôle BIAC de même nom : dans BIAC, un rôle est **assigné explicitement à un groupe**. Les groupes renvoyés par le group provider (les `code_pa`) sont les noms de groupes auxquels on assigne les rôles (la documentation Starburst indique que `SELECT current_groups()` montre les noms de groupes qui sont mis en correspondance avec les rôles BIAC).
+
+Le principe retenu est un `code_pa` pour un seul rôle, et inversement. Donner au rôle le même nom que le `code_pa` n'est qu'une **convention recommandée**, qui facilite la lecture et la vérification de T03.
+
+Procédure, pour chaque `code_pa` :
+
+1. créer le rôle BIAC (par exemple de même nom que le `code_pa`) ;
+2. assigner ce rôle au groupe portant le nom du `code_pa` : interface BIAC (Roles, assignation à un groupe) ou API BIAC ;
+3. accorder au rôle ses privilèges (tables, vues, `EXECUTE` sur les fonctions, row filters).
 
 Exemple (noms fictifs) :
 
 | Groupe Passeport (`code_pa`) | Rôle BIAC | Privilèges portés par le rôle |
 |---|---|---|
-| `APP_AUDITOR` | `APP_AUDITOR` | `SELECT` sur `catalog.schema.table` ; `EXECUTE` sur `passeport_perimetre` ; row filter sur `catalog.schema.table` |
-| `APP_VIEWER` | `APP_VIEWER` | `SELECT` sur une vue de `catalog.schema` |
+| `APP_AUDITOR` | `APP_AUDITOR` (assigné au groupe `APP_AUDITOR`) | `SELECT` sur `catalog.schema.table` ; `EXECUTE` sur `passeport_perimetre` ; row filter sur `catalog.schema.table` |
+| `APP_VIEWER` | `APP_VIEWER` (assigné au groupe `APP_VIEWER`) | `SELECT` sur une vue de `catalog.schema` |
 
-Mise en oeuvre : créer dans BIAC les rôles portant exactement les noms des `code_pa`, puis leur accorder les privilèges (interface de BIAC ou API BIAC ; les privilèges de table peuvent aussi s'écrire en SQL, par exemple `GRANT SELECT ON catalog.schema.table TO ROLE "APP_AUDITOR"`). La façon exacte d'associer un groupe à un rôle dans votre version de SEP est décrite dans la documentation BIAC de cette version : **à confirmer lors de la recette**. Respecter la casse (ou utiliser `group-provider.group-case`).
+Les privilèges de table peuvent aussi s'écrire en SQL, par exemple `GRANT SELECT ON catalog.schema.table TO ROLE "APP_AUDITOR"`. L'assignation d'un rôle à un groupe se fait dans l'interface ou l'API BIAC ; sa forme exacte dans votre version de SEP est décrite dans la documentation BIAC de cette version : **à confirmer lors de la recette**. Respecter la casse des noms de groupes (ou utiliser `group-provider.group-case`).
+
+Un groupe auquel aucun rôle n'est assigné ne donne aucun privilège.
 
 ### `GRANT EXECUTE` sur `passeport_perimetre()`
 
@@ -393,11 +428,12 @@ Point d'attention à vérifier : l'appel `passeport_perimetre()` doit renvoyer l
 
 1. Reproduire pour un utilisateur de test l'affectation multi-profils fournie par la CNAM (plusieurs profils, plusieurs domaines, plusieurs caisses, y compris un `perimetre` multiple du type `"011,717"`).
 2. Résultat attendu : les groupes sont l'ensemble des profils ; `passeport_perimetre()` renvoie l'union des valeurs sans doublon, dans l'ordre de la réponse de l'API (une valeur `"011,717"` donne deux éléments) ; les lignes visibles correspondent exactement au périmètre attendu par les équipes métier, sans droit en excès.
+3. Point d'attention : quand un utilisateur a plusieurs groupes, vérifier si tous les rôles assignés sont actifs par défaut ou si un `SET ROLE` est nécessaire. Ce comportement détermine le résultat de T02 (droits cumulés ou limités à un seul rôle) et doit être relevé pendant le test.
 
 ### T03 : correspondance 1:1
 
-1. Lister les profils Passeport du périmètre du test et les rôles BIAC correspondants.
-2. Résultat attendu : chaque `code_pa` correspond à exactement un rôle de même nom ; chaque rôle est visé par un seul `code_pa` ; aucune exception, ou les exceptions sont documentées. Un `code_pa` sans rôle BIAC homonyme ne donne aucun privilège.
+1. Lister les profils Passeport du périmètre du test et les rôles BIAC assignés aux groupes correspondants.
+2. Résultat attendu : chaque `code_pa` (groupe) a exactement un rôle assigné ; chaque rôle est assigné à un seul groupe ; aucune exception, ou les exceptions sont documentées. Un groupe sans rôle assigné ne donne aucun privilège.
 
 ### Tests d'erreur (facultatifs, environnement de test)
 
@@ -427,4 +463,5 @@ Pour désactiver seulement le group provider, retirer `etc/group-provider.proper
 6. **TTL souhaité** : délai maximal acceptable de prise en compte d'un changement d'habilitation (défaut 15 minutes).
 7. **Versions SEP et Java** de l'environnement cible, et validation sur la 480-e le cas échéant.
 8. **Injection du secret** du truststore par `${ENV:...}` : confirmation sur la version de SEP cible (section 5).
-9. **Association groupe vers rôle BIAC** et octroi du `EXECUTE` sur fonction : procédure exacte dans la version de SEP cible (section 7).
+9. **Assignation d'un rôle BIAC à un groupe** et octroi du `EXECUTE` sur fonction : procédure exacte dans la version de SEP cible (section 7).
+10. **Activation des rôles quand un utilisateur a plusieurs groupes** : tous actifs par défaut, ou `SET ROLE` nécessaire ? À vérifier en recette, déterminant pour T02.
