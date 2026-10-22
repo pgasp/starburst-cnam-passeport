@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Test;
 
 public class HashFunctionsTest {
 
-    // Valeur calculée par le cluster : SELECT to_hex(sha256(to_utf8('benidf1' || '|' || 'pascal.gasp')))
-    private static final String CLUSTER_REFERENCE = "659EF9D3BB03D5ECBF3BCB869F9B190464958942A384637ECEDFDE07ABC673F6";
+    // Valeur de référence calculée hors du code : echo -n 'value1|user.test' | openssl dgst -sha256 (equivalent to to_hex(sha256(to_utf8('value1' || '|' || 'user.test'))) in SQL)
+    private static final String CLUSTER_REFERENCE = "F338F2941AD7FC4FC1CD8ABB256058C7861503C65D6D180C66BF6FB303993493";
 
     private static String call(String value, String salt) {
         return HashFunctions.hashUserSalt(Slices.utf8Slice(value), Slices.utf8Slice(salt)).toStringUtf8();
@@ -19,12 +19,12 @@ public class HashFunctionsTest {
 
     @Test
     public void matchesTrinoSqlExpression() {
-        assertEquals(CLUSTER_REFERENCE, call("benidf1", "pascal.gasp"));
+        assertEquals(CLUSTER_REFERENCE, call("value1", "user.test"));
     }
 
     @Test
     public void matchesJdkReferenceForVariedInputs() throws Exception {
-        String[][] cases = {{"", ""}, {"a", "b"}, {"BEN_42", "kader.kassed"}, {"accentué", "émilie.letullier"}};
+        String[][] cases = {{"", ""}, {"a", "b"}, {"VALUE_42", "user.one"}, {"accentué", "émilie.test"}};
         for (String[] c : cases) {
             byte[] expected = MessageDigest.getInstance("SHA-256").digest((c[0] + "|" + c[1]).getBytes(StandardCharsets.UTF_8));
             assertEquals(HexFormat.of().withUpperCase().formatHex(expected), call(c[0], c[1]));
@@ -39,9 +39,9 @@ public class HashFunctionsTest {
 
     @Test
     public void repeatedCallsAreStable() {
-        String first = call("benidf1", "pascal.gasp");
+        String first = call("value1", "user.test");
         for (int i = 0; i < 1000; i++) {
-            assertEquals(first, call("benidf1", "pascal.gasp"));
+            assertEquals(first, call("value1", "user.test"));
         }
     }
 }

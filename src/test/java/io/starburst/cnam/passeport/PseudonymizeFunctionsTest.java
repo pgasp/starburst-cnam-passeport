@@ -126,20 +126,20 @@ public class PseudonymizeFunctionsTest {
     public void isDeterministicAcrossCallsAndInstances()
     {
         PseudonymizeFunctions.useEnvironment(env(TEST_KEY_A));
-        String first = call("1850775123456");
+        String first = call("REF-000123");
         for (int i = 0; i < 1000; i++) {
-            assertEquals(first, call("1850775123456"));
+            assertEquals(first, call("REF-000123"));
         }
         // Simule un redémarrage / un autre worker : nouvelle lecture de la même clé.
         PseudonymizeFunctions.useEnvironment(env(TEST_KEY_A));
-        assertEquals(first, call("1850775123456"));
+        assertEquals(first, call("REF-000123"));
     }
 
     @Test
     public void differentValuesGiveDifferentPseudonyms()
     {
         PseudonymizeFunctions.useEnvironment(env(TEST_KEY_A));
-        assertNotEquals(call("1850775123456"), call("1850775123457"));
+        assertNotEquals(call("REF-000123"), call("REF-000124"));
     }
 
     @Test
@@ -166,9 +166,9 @@ public class PseudonymizeFunctionsTest {
     public void twoDifferentKeysGiveDifferentPseudonyms()
     {
         PseudonymizeFunctions.useEnvironment(env(TEST_KEY_A));
-        String withKeyA = call("1850775123456");
+        String withKeyA = call("REF-000123");
         PseudonymizeFunctions.useEnvironment(env(TEST_KEY_B));
-        String withKeyB = call("1850775123456");
+        String withKeyB = call("REF-000123");
         assertNotEquals(withKeyA, withKeyB);
     }
 
@@ -187,7 +187,7 @@ public class PseudonymizeFunctionsTest {
     public void missingKeyFailsClosedWithExplicitError()
     {
         PseudonymizeFunctions.useEnvironment(env(null));
-        TrinoException e = assertThrows(TrinoException.class, () -> call("1850775123456"));
+        TrinoException e = assertThrows(TrinoException.class, () -> call("REF-000123"));
         assertEquals(StandardErrorCode.CONFIGURATION_INVALID.toErrorCode(), e.getErrorCode());
         assertTrue(e.getMessage().contains(Pseudonymizer.KEY_ENV_VARIABLE));
     }
