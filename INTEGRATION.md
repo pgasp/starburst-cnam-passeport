@@ -1,6 +1,6 @@
 # Plugin Passeport pour Starburst Enterprise : mode opératoire d'intégration
 
-Version du plugin : 3.0.22. Document destiné aux équipes techniques chargées de l'installation, de la configuration et de la recette.
+Version du plugin : 3.0.23. Document destiné aux équipes techniques chargées de l'installation, de la configuration et de la recette.
 
 Ce document couvre le group provider et la fonction SQL de périmètre, pour les tests T01 à T03.
 
@@ -70,6 +70,8 @@ Le truststore n'est lu qu'au démarrage : un renouvellement de certificat impose
 
 Code de l'application Passeport correspondant au projet, transmis tel quel dans l'URL. C'est un paramètre de configuration, sans valeur par défaut. Il doit être fourni par la CNAM (section 11).
 
+**`passeport.code-application` doit être égal à la valeur `app.code_app` renvoyée par l'API, quelle que soit la casse** (les espaces de bord sont aussi ignorés). Sinon, tous les éléments de la réponse sont ignorés et l'utilisateur n'a aucun groupe (voir section 8, Logs).
+
 ### UPN fourni par le SSO
 
 Le plugin interroge l'API avec l'identifiant de l'utilisateur tel que le voit SEP après authentification. Cet identifiant doit être l'**UPN** attendu par l'API Passeport. Si le SSO fournit un autre attribut (adresse e-mail, identifiant court), l'API ne trouvera pas l'utilisateur. Vérifier que l'attribut utilisé comme nom d'utilisateur par SEP est bien l'UPN (section 11).
@@ -78,14 +80,14 @@ Le plugin interroge l'API avec l'identifiant de l'utilisateur tel que le voit SE
 
 ## 3. Contenu et vérification du livrable
 
-Livrable : `passeport-group-provider-3.0.22.zip`, accompagné de son empreinte SHA-256 communiquée séparément.
+Livrable : `passeport-group-provider-3.0.23.zip`, accompagné de son empreinte SHA-256 communiquée séparément.
 
-Contenu : un dossier unique `passeport-group-provider-3.0.22/` contenant
+Contenu : un dossier unique `passeport-group-provider-3.0.23/` contenant
 
 | Fichier | Rôle |
 |---|---|
-| `passeport-group-provider-3.0.22.jar` | code du plugin |
-| `passeport-group-provider-3.0.22-services.jar` | descripteur de chargement du plugin |
+| `passeport-group-provider-3.0.23.jar` | code du plugin |
+| `passeport-group-provider-3.0.23-services.jar` | descripteur de chargement du plugin |
 | `INTEGRATION.md` | ce document |
 | `bootstrap-234.jar`, `configuration-234.jar`, `log-234.jar`, `units-1.0.jar` | bibliothèques de configuration (airlift) |
 | `guice-7.0.0.jar`, `aopalliance-1.0.jar`, `jakarta.inject-api-2.0.1.jar`, `jakarta.annotation-api-2.1.1.jar` | injection de dépendances |
@@ -98,12 +100,12 @@ Aucun fichier `LICENSE` ni `NOTICE` n'est fourni avec cette version.
 Vérification de l'intégrité (à faire avant toute installation) :
 
 ```bash
-sha256sum passeport-group-provider-3.0.22.zip
+sha256sum passeport-group-provider-3.0.23.zip
 # comparer à l'empreinte communiquée avec le livrable
-unzip -l passeport-group-provider-3.0.22.zip
+unzip -l passeport-group-provider-3.0.23.zip
 ```
 
-Le zip doit contenir `passeport-group-provider-3.0.22.jar` et `passeport-group-provider-3.0.22-services.jar`, et aucune entrée `.zip`.
+Le zip doit contenir `passeport-group-provider-3.0.23.jar` et `passeport-group-provider-3.0.23-services.jar`, et aucune entrée `.zip`.
 
 ---
 
@@ -131,7 +133,7 @@ coordinator:
         - |
           set -eu
           mkdir -p /mnt/plugin-staging
-          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.22.zip"
+          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.23.zip"
           echo "<sha256-communique-avec-le-livrable>  /mnt/plugin-staging/passeport.zip" | sha256sum -c -
           rm -rf /mnt/plugin-staging/passeport
           mkdir -p /mnt/plugin-staging/passeport
@@ -156,7 +158,7 @@ worker:
         - |
           set -eu
           mkdir -p /mnt/plugin-staging
-          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.22.zip"
+          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.23.zip"
           echo "<sha256-communique-avec-le-livrable>  /mnt/plugin-staging/passeport.zip" | sha256sum -c -
           rm -rf /mnt/plugin-staging/passeport
           mkdir -p /mnt/plugin-staging/passeport
@@ -203,7 +205,7 @@ Construire une image à partir de l'image SEP autorisée par la CNAM, avec le pl
 ```dockerfile
 FROM <registre-interne>/<image-sep-autorisee>@sha256:<digest>
 # le contexte de build contient le dossier issu de la décompression du zip vérifié
-COPY --chown=<uid-sep>:0 passeport-group-provider-3.0.22/ /usr/lib/starburst/plugin/passeport/
+COPY --chown=<uid-sep>:0 passeport-group-provider-3.0.23/ /usr/lib/starburst/plugin/passeport/
 ```
 
 Vérifier le SHA-256 du zip avant de le décompresser dans le contexte de build. Pour changer de version du plugin, reconstruire l'image.
@@ -220,7 +222,7 @@ Fichier `etc/group-provider.properties` du **coordinator** (par le mécanisme du
 |---|---|---|---|
 | `group-provider.name` | oui | aucun | Doit valoir `passeport` (propriété SEP, pas du plugin). |
 | `passeport.api-url` | **oui** | aucun | URL de base de l'API, sans l'UPN ni le code application. Un `/` final est ignoré. Schéma `http` ou `https`, sans paramètre ni fragment. |
-| `passeport.code-application` | **oui** | aucun | Code de l'application Passeport, ajouté à l'URL. |
+| `passeport.code-application` | **oui** | aucun | Code de l'application Passeport, ajouté à l'URL. Doit être égal à `app.code_app` renvoyé par l'API (casse indifférente). |
 | `passeport.trust-store-path` | non | aucun (truststore de la JVM) | Chemin du truststore (JKS ou PKCS12) dans le pod coordinator. |
 | `passeport.trust-store-password` | non | aucun | Mot de passe du truststore. Valeur masquée dans les logs de démarrage. |
 | `passeport.cache-ttl` | non | `15m` | Durée de vie d'une entrée du cache (par exemple `30s`, `5m`, `1h`). Minimum `1s`. |
@@ -272,7 +274,7 @@ Accept: application/json
 ### Réponse
 
 - Seul le code HTTP **200** est accepté. Tout autre code (y compris 404 ou une redirection) est une erreur.
-- Le corps doit être un tableau JSON. Deux formes sont lues, par élément :
+- Le corps doit être un tableau JSON. Les blancs de bord et un éventuel BOM sont ignorés. Un corps **entouré d'apostrophes littérales** (`'[{"app":...}]'`, format réellement renvoyé par l'API Passeport) est accepté : si le corps commence **et** finit par `'`, cette unique paire est retirée, une seule fois, avant la lecture ; une apostrophe isolée ou interne n'est jamais tolérée (le parseur reste strict). Un corps JSON **double-encodé** (une chaîne JSON qui contient le tableau, par exemple `"[{\"app\":...}]"`) est aussi accepté : la chaîne est décodée une seule fois, et son contenu doit alors être un tableau. Deux formes sont lues, par élément :
 
 Forme imbriquée (format réel de l'API), lue en priorité :
 
@@ -297,7 +299,8 @@ Règles de lecture :
 - **Périmètre multiple** : une valeur comme `"011,717"` est découpée sur la virgule ; chaque valeur est débarrassée de ses espaces de bord, les valeurs vides sont ignorées. Le périmètre de l'utilisateur est l'ensemble des valeurs de tous ses profils, sans doublon, dans l'ordre d'apparition. Une valeur unique comme `TOUS` reste telle quelle. Un périmètre numérique JSON est accepté (converti en texte).
 - **Filtre sur l'application** : si un élément porte `app.code_app` et qu'il diffère du `code_application` configuré (sans tenir compte de la casse ni des espaces de bord), l'élément est ignoré et un avertissement est journalisé. Un élément sans `app` (forme plate) n'est pas filtré.
 - Un tableau vide `[]` est une réponse valide : l'utilisateur n'a aucun groupe et aucun périmètre.
-- **Toute autre structure fait échouer la requête** : racine qui n'est pas un tableau, élément qui n'est pas un objet, élément sans `code_pa` ni `listepa`, `listepa` qui n'est pas un tableau, `code_pa` absent, vide ou non textuel, `perimetre` qui n'est ni texte ni nombre, JSON invalide.
+- Un avertissement (`WARNING`) est journalisé lorsque **tous** les éléments d'un tableau non vide sont ignorés (autre application), ou lorsqu'aucun groupe n'est trouvé alors que le tableau n'est pas vide.
+- **Toute autre structure fait échouer la requête** : racine qui n'est pas un tableau (le message indique le type du nœud reçu à la racine, par exemple `STRING` ou `OBJECT`, et pour un objet la liste de ses clés de premier niveau, jamais le contenu ; une chaîne JSON dont le contenu n'est pas un tableau est rejetée de la même façon), élément qui n'est pas un objet, élément sans `code_pa` ni `listepa`, `listepa` qui n'est pas un tableau, `code_pa` absent, vide ou non textuel, `perimetre` qui n'est ni texte ni nombre, JSON invalide.
 
 ---
 
@@ -377,7 +380,7 @@ Un ajout, un retrait ou un changement de périmètre côté Passeport est visibl
 ### Logs
 
 - Les logs du plugin utilisent le logger `io.starburst.cnam.passeport`.
-- Niveaux : `WARNING` pour un code HTTP inattendu ou un élément ignoré (autre application), `SEVERE` (avec trace) pour un échec d'appel, `DEBUG` pour le détail d'un appel (« Fetching Passeport data for user »).
+- Niveaux : `WARNING` pour un code HTTP inattendu, un élément ignoré (autre application), tous les éléments ignorés ou aucun groupe trouvé dans un tableau non vide, `SEVERE` (avec trace) pour un échec d'appel, `DEBUG` pour le détail d'un appel (« Fetching Passeport data for user »).
 - Activer le niveau DEBUG dans `etc/log.properties` du coordinator :
 
 ```properties
@@ -386,6 +389,23 @@ io.starburst.cnam.passeport=DEBUG
 
   Ne laisser DEBUG actif que le temps du diagnostic.
 - Au démarrage, les valeurs des propriétés `passeport.*` sont écrites dans les logs ; le mot de passe du truststore y est masqué.
+
+### Diagnostic d'une réponse inattendue
+
+Message `Unexpected response format from Passeport API: expected a JSON array at the top level, received <TYPE>` : le corps HTTP est du JSON valide mais pas un tableau. Depuis le pod coordinator, afficher le premier caractère de la réponse réelle :
+
+```bash
+curl -s -H 'Accept: application/json' '<api-url>/<upn>/<code-application>' | head -c 1
+```
+
+| Premier caractère | Cas | Suite |
+|---|---|---|
+| `[` | Tableau attendu | Le problème est ailleurs : lire le message d'erreur complet. |
+| `'` | Tableau entouré d'apostrophes | Cas géré depuis la version 3.0.23 (les apostrophes de bord sont retirées) ; une version antérieure répond « not valid JSON ». |
+| `"` | JSON double-encodé | Accepté depuis la version 3.0.23 ; une version antérieure échoue. |
+| `{` | Objet | Non accepté : le message liste les clés de premier niveau ; transmettre ces noms de champs à l'équipe du plugin. |
+
+Si l'utilisateur n'obtient aucun groupe sans erreur, chercher dans les logs l'avertissement `All <n> Passeport element(s) were ignored` : `passeport.code-application` diffère de `app.code_app`.
 
 ### Données personnelles
 
