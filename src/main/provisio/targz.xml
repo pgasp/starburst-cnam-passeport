@@ -1,0 +1,22 @@
+<!-- Second format du livrable : même contenu que le zip (mêmes jars, même racine unique <artifactId>-<version>/),
+     en tar.gz, pour les images d'init qui n'ont ni wget ni unzip (curl et tar seulement).
+     Ce descripteur est autonome : le descripteur par défaut du trino-maven-plugin ne produit que le zip. -->
+<assembly>
+    <artifactSet to="/" ref="runtime.classpath" fileMode="0644" />
+
+    <fileSet to="/" fileMode="0644">
+        <directory path="${basedir}/target">
+            <include>${project.artifactId}-${project.version}-services.jar</include>
+        </directory>
+    </fileSet>
+
+    <fileSet to="/" fileMode="0644">
+        <directory path="${basedir}">
+            <include>INTEGRATION.md</include>
+            <include>LICENSE*</include>
+            <include>NOTICE*</include>
+        </directory>
+    </fileSet>
+
+    <archive name="${project.artifactId}-${project.version}.tar.gz" />
+</assembly>

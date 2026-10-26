@@ -7,8 +7,10 @@ import io.trino.spi.TrinoException;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
 
@@ -62,12 +64,11 @@ final class PasseportResponseParser {
             throw unexpected("expected a JSON array at the top level, received " + describe(root));
         }
 
-        Set<String> groups = new LinkedHashSet<>();
-        Set<String> perimetres = new LinkedHashSet<>();
+        Map<String, Set<String>> perimetresByGroup = new LinkedHashMap<>();
         int index = 0;
         int ignored = 0;
         for (JsonNode element : root) {
-            if (!parseElement(element, index++, expectedApplication, groups, perimetres)) {
+            if (!parseElement(element, index++, expectedApplication, perimetresByGroup)) {
                 ignored++;
             }
         }
@@ -76,10 +77,10 @@ final class PasseportResponseParser {
                     + "passeport.code-application '" + expectedApplication + "': the user will have no group. "
                     + "passeport.code-application must equal the app.code_app returned by the API (case-insensitive)");
         }
-        else if (index > 0 && groups.isEmpty()) {
+        else if (index > 0 && perimetresByGroup.isEmpty()) {
             log.warning("The Passeport response holds " + index + " element(s) but no group (code_pa) was found: the user will have no group");
         }
-        return new PasseportAuthService.AuthData(groups, java.util.List.copyOf(perimetres));
+        return new PasseportAuthService.AuthData(perimetresByGroup);
     }
 
     /** Retire les blancs de bord et les BOM (U+FEFF), que {@link String#strip()} ne considère pas comme des blancs. */
@@ -149,7 +150,7 @@ final class PasseportResponseParser {
     }
 
     /** @return {@code false} si l'élément a été ignoré (autre application), {@code true} s'il a été lu. */
-    private static boolean parseElement(JsonNode element, int index, String expectedApplication, Set<String> groups, Set<String> perimetres) {
+    private static boolean parseElement(JsonNode element, int index, String expectedApplication, Map<String, Set<String>> perimetresByGroup) {
         if (!element.isObject()) {
             throw unexpected("element #" + index + " is not a JSON object");
         }
@@ -171,12 +172,12 @@ final class PasseportResponseParser {
                 if (!entry.isObject()) {
                     throw unexpected("entry #" + entryIndex + " of 'listepa' of element #" + index + " is not a JSON object");
                 }
-                parseEntry(entry, "entry #" + entryIndex + " of 'listepa' of element #" + index, groups, perimetres);
+                parseEntry(entry, "entry #" + entryIndex + " of 'listepa' of element #" + index, perimetresByGroup);
                 entryIndex++;
             }
         }
         if (hasCodePa) {
-            parseEntry(element, "element #" + index, groups, perimetres);
+            parseEntry(element, "element #" + index, perimetresByGroup);
         }
         return true;
     }
@@ -204,12 +205,13 @@ final class PasseportResponseParser {
         return false;
     }
 
-    private static void parseEntry(JsonNode entry, String where, Set<String> groups, Set<String> perimetres) {
+    private static void parseEntry(JsonNode entry, String where, Map<String, Set<String>> perimetresByGroup) {
         JsonNode codePa = entry.get("code_pa");
         if (codePa == null || !codePa.isTextual() || codePa.asText().isBlank()) {
             throw unexpected("'code_pa' of " + where + " is missing, empty or not a string");
         }
-        groups.add(codePa.asText());
+        // Un même code_pa répété (autre élément, autre entrée) fusionne ses périmètres dans la même entrée.
+        Set<String> perimetres = perimetresByGroup.computeIfAbsent(codePa.asText(), key -> new LinkedHashSet<>());
 
         JsonNode perimetre = entry.get("perimetre");
         if (perimetre == null || perimetre.isNull()) {
@@ -218,7 +220,7 @@ final class PasseportResponseParser {
         if (!perimetre.isTextual() && !perimetre.isNumber()) {
             throw unexpected("'perimetre' of " + where + " is neither a string nor a number");
         }
-        // "011,717" -> 011 et 717 ; valeurs vides ignorées ; doublons éliminés en gardant l'ordre d'apparition.
+        // "011,717" -> 011 et 717 ; valeurs vides ignorées ; doublons éliminés (par groupe) en gardant l'ordre d'apparition.
         for (String part : perimetre.asText().split(",")) {
             String value = part.strip();
             if (!value.isEmpty()) {

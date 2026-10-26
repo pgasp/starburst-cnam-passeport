@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @WireMockTest
 public class PasseportGroupProviderTest {
 
-    private static final String BASE_PATH = "/s1sem/habilitations";
+    private static final String BASE_PATH = "/api/habilitations";
     private static final String APP = "SY_APP";
     private static final String USER = "user.test@example.org";
 
@@ -148,7 +148,7 @@ public class PasseportGroupProviderTest {
 
     @Test
     public void testUnreachableApiFailClosed() {
-        PasseportConfig config = new PasseportConfig().setApiUrl("http://127.0.0.1:1/s1sem/habilitations").setCodeApplication(APP);
+        PasseportConfig config = new PasseportConfig().setApiUrl("http://127.0.0.1:1/api/habilitations").setCodeApplication(APP);
         assertThrows(TrinoException.class, () -> provider(config).getGroups(USER));
     }
 

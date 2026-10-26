@@ -4,6 +4,8 @@ import com.google.common.base.Ticker;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.inject.Inject;
 import io.trino.spi.StandardErrorCode;
 import io.trino.spi.TrinoException;
@@ -21,8 +23,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -36,16 +41,40 @@ public class PasseportAuthService {
     private final HttpClient httpClient;
     private final LoadingCache<String, AuthData> cache;
 
+    /**
+     * Réponse de Passeport pour un utilisateur : le périmètre est gardé <b>par groupe</b> ({@code code_pa}), dans l'ordre
+     * d'apparition. Les périmètres d'un même {@code code_pa} répété sont fusionnés (sans doublon), les valeurs vides
+     * sont ignorées. Un groupe sans périmètre est présent avec une liste vide.
+     */
     public static class AuthData {
+        private final Map<String, List<String>> perimetresByGroup;
         private final Set<String> groups;
         private final List<String> perimetres;
 
-        public AuthData(Set<String> groups, List<String> perimetres) {
-            this.groups = Set.copyOf(groups);
-            this.perimetres = List.copyOf(perimetres);
+        public AuthData(Map<String, ? extends Collection<String>> perimetresByGroup) {
+            ImmutableMap.Builder<String, List<String>> byGroup = ImmutableMap.builder();
+            Set<String> all = new LinkedHashSet<>();
+            for (Map.Entry<String, ? extends Collection<String>> entry : perimetresByGroup.entrySet()) {
+                List<String> values = entry.getValue().stream()
+                        .filter(value -> value != null && !value.isBlank())
+                        .distinct()
+                        .collect(ImmutableList.toImmutableList());
+                byGroup.put(entry.getKey(), values);
+                all.addAll(values);
+            }
+            this.perimetresByGroup = byGroup.build();
+            this.groups = this.perimetresByGroup.keySet();
+            this.perimetres = ImmutableList.copyOf(all);
         }
+
+        /** Les groupes ({@code code_pa}) de l'utilisateur : ce que renvoie le group provider. */
         public Set<String> getGroups() { return groups; }
+
+        /** Réunion des périmètres de tous les groupes (utilisée seulement par le contrôle d'accès système). */
         public List<String> getPerimetres() { return perimetres; }
+
+        /** Périmètre de chaque groupe, clés dans l'ordre d'apparition. */
+        public Map<String, List<String>> getPerimetresByGroup() { return perimetresByGroup; }
     }
 
     private static volatile PasseportAuthService globalInstance;
@@ -110,6 +139,11 @@ public class PasseportAuthService {
 
     public static PasseportAuthService getGlobalInstance() {
         return globalInstance;
+    }
+
+    /** Pour les tests : simule un nœud (worker) où le group provider n'est pas chargé. */
+    static void clearGlobalInstance() {
+        globalInstance = null;
     }
 
     private AuthData fetchFromApi(String user) {
@@ -216,6 +250,30 @@ public class PasseportAuthService {
         } catch (Exception e) {
             throw new TrinoException(StandardErrorCode.GENERIC_INTERNAL_ERROR, "Error retrieving perimetres for user " + user, e);
         }
+    }
+
+    /** Périmètre de chaque groupe de l'utilisateur ({@code code_pa} vers périmètre), même cache que {@link #getGroups}. */
+    public Map<String, List<String>> getPerimetresByGroup(String user) {
+        if (user == null || user.isBlank()) return Collections.emptyMap();
+        try {
+            return cache.getUnchecked(user).getPerimetresByGroup();
+        } catch (Exception e) {
+            throw new TrinoException(StandardErrorCode.GENERIC_INTERNAL_ERROR, "Error retrieving perimetres for user " + user, e);
+        }
+    }
+
+    /**
+     * Invalide l'entrée d'<b>un seul</b> utilisateur : la prochaine requête de cet utilisateur réinterroge l'API.
+     * Jamais de purge globale par cette voie : un utilisateur sans nom ({@code null} ou vide) est refusé.
+     *
+     * @return {@code true} si l'invalidation a été effectuée (l'entrée existait ou non), {@code false} si l'utilisateur est inexploitable
+     */
+    public boolean invalidate(String user) {
+        if (user == null || user.isBlank()) {
+            return false;
+        }
+        cache.invalidate(user);
+        return true;
     }
 
     public void flush(String user) {

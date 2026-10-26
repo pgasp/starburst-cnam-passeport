@@ -9,7 +9,8 @@ Mode opératoire d'installation, de configuration et de recette : [INTEGRATION.m
 | Composant | Classe | Rôle |
 |---|---|---|
 | Group provider `passeport` | `PasseportGroupProvider` | Appelle `GET <passeport.api-url>/<upn>/<passeport.code-application>` et renvoie les `code_pa` comme groupes. |
-| Fonction `passeport_perimetre()` | `PasseportFunctions` | Renvoie `array(varchar)` : le périmètre de l'utilisateur courant (même réponse d'API, même cache). |
+| Fonction `passeport_perimetre()` | `PasseportFunctions` | Renvoie `array(varchar)` : le périmètre du groupe Passeport dont le nom est égal au rôle BIAC actif (un seul rôle actif, `public` et `sysadmin` ignorés) ; tableau vide dans tous les autres cas (fail closed). Surcharge `passeport_perimetre(code_pa)` pour les row filters écrits par rôle. **Depuis la 3.0.24** : changement de comportement, la 3.0.23 renvoyait la réunion des périmètres de tous les groupes. |
+| Fonction `passeport_cache_invalidate()` | `PasseportFunctions` | Invalide l'entrée de cache de l'utilisateur courant seulement (booléen) ; pas de purge globale. Évaluée sur le coordinator. |
 | Fonctions `hash_user_salt`, `pseudonymize`, `current_user_biac_roles` | `HashFunctions`, `PseudonymizeFunctions`, `PasseportFunctions` | Hors du périmètre Passeport ; inactives sans `GRANT EXECUTE` dans BIAC. |
 | Contrôle d'accès système `passeport` | `PasseportSystemAccessControl` | Row filters par table configurés en propriétés. Ne l'utiliser qu'enchaîné avec BIAC : ses vérifications autorisent toutes les opérations. |
 
@@ -39,6 +40,6 @@ JDK 25 et Maven :
 mvn clean verify
 ```
 
-Livrable : `target/passeport-group-provider-<version>.zip`, produit par `trino-maven-plugin` seul : un dossier `passeport-group-provider-<version>/` avec le jar du plugin, `-services.jar` (descripteur `META-INF/services/io.trino.spi.Plugin`), les dépendances et `INTEGRATION.md` (`src/main/provisio/docs.xml`). N'ajouter aucun `maven-assembly-plugin` : il réécrirait un zip imbriqué sans jar de plugin. Contrôle : `unzip -l` doit lister `<artifact>-<version>.jar` et `-services.jar`, et aucune entrée `.zip`.
+Livrables : `target/passeport-group-provider-<version>.zip` (produit par `trino-maven-plugin`) et `target/passeport-group-provider-<version>.tar.gz` (même contenu, second descripteur provisio `src/main/provisio/targz.xml`). Le zip : un dossier `passeport-group-provider-<version>/` avec le jar du plugin, `-services.jar` (descripteur `META-INF/services/io.trino.spi.Plugin`), les dépendances et `INTEGRATION.md` (`src/main/provisio/docs.xml`). N'ajouter aucun `maven-assembly-plugin` : il réécrirait un zip imbriqué sans jar de plugin. Contrôle : `unzip -l` doit lister `<artifact>-<version>.jar` et `-services.jar`, et aucune entrée `.zip`.
 
 Les dépendances `trino-spi`, Jackson (annotations) et OpenTelemetry sont en portée `provided`.

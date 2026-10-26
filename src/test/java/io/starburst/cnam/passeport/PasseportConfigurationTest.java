@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class PasseportConfigurationTest {
 
-    private static final String URL = "https://passeport.example.org/s1sem/habilitations";
+    private static final String URL = "https://passeport.example.org/api/habilitations";
 
     @Test
     public void apiUrlAndCodeApplicationHaveNoDefault() {
