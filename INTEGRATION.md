@@ -1,6 +1,6 @@
 # Plugin Passeport pour Starburst Enterprise : mode opératoire d'intégration
 
-Version du plugin : 3.0.24. Document destiné aux équipes techniques chargées de l'installation, de la configuration et de la recette.
+Version du plugin : 3.1.0. Document destiné aux équipes techniques chargées de l'installation, de la configuration et de la recette.
 
 Ce document couvre le group provider, les fonctions SQL de périmètre (modèle de profils) et la purge du cache, pour les tests T01 à T03 et T07.
 
@@ -11,7 +11,9 @@ Ce document couvre le group provider, les fonctions SQL de périmètre (modèle 
 ### Ce que fait le plugin
 
 - **Group provider `passeport`** : à chaque requête SQL, SEP demande au plugin les groupes de l'utilisateur. Le plugin interroge l'API Passeport avec l'UPN de l'utilisateur et le `code_application` configuré, et renvoie les codes profil (`code_pa`) comme groupes. Dans BIAC, des rôles sont assignés à ces groupes (section 7).
-- **Fonction SQL `passeport_perimetre()`** : renvoie, sous forme de `array(varchar)`, le périmètre (par exemple les caisses) **du profil actif** de l'utilisateur, c'est-à-dire du seul groupe Passeport dont le nom est égal au rôle BIAC actif (section 7). Elle sert dans un row filter BIAC. Une surcharge `passeport_perimetre(code_pa)` sert aux row filters écrits par rôle.
+- **Fonction SQL `current_passeport_perimetre()`** : renvoie, sous forme de `array(varchar)`, le périmètre (par exemple les caisses) **du profil actif** de l'utilisateur, c'est-à-dire du seul groupe Passeport dont le nom est égal au rôle BIAC actif (section 7). Elle sert dans un row filter BIAC. Si **plusieurs profils sont actifs**, la requête échoue (`Unsupported multi perimetre`) : l'utilisateur doit choisir un profil avec `SET ROLE <profil>`.
+- **Fonction SQL `passeport_perimetres(code_pa)`** : renvoie le périmètre du groupe indiqué si l'utilisateur appelant en est membre, un tableau vide sinon. Elle **ne vérifie pas le profil actif** : elle sert au diagnostic, pas aux row filters.
+- Les fonctions `passeport_perimetre()` et `passeport_perimetre(code_pa)` de la 3.0.x sont **supprimées** (section 7, « Migration depuis la 3.0.x »).
 - **Fonction SQL `passeport_cache_invalidate()`** : invalide l'entrée de cache de l'utilisateur courant, et d'aucun autre (section 7).
 - Les groupes et le périmètre de chaque groupe sont gardés en mémoire (cache) pendant une durée configurable (15 minutes par défaut).
 - En cas d'erreur de l'API, la requête échoue (fail closed, voir section 8).
@@ -81,14 +83,14 @@ Le plugin interroge l'API avec l'identifiant de l'utilisateur tel que le voit SE
 
 ## 3. Contenu et vérification du livrable
 
-Livrable : `passeport-group-provider-3.0.24.zip` **ou** `passeport-group-provider-3.0.24.tar.gz` (même contenu, mêmes jars, même dossier racine ; le tar.gz sert aux images d'init qui n'ont que `curl` et `tar`), chacun accompagné de son empreinte SHA-256 communiquée séparément.
+Livrable : `passeport-group-provider-3.1.0.zip` **ou** `passeport-group-provider-3.1.0.tar.gz` (même contenu, mêmes jars, même dossier racine ; le tar.gz sert aux images d'init qui n'ont que `curl` et `tar`), chacun accompagné de son empreinte SHA-256 communiquée séparément.
 
-Contenu : un dossier unique `passeport-group-provider-3.0.24/` contenant
+Contenu : un dossier unique `passeport-group-provider-3.1.0/` contenant
 
 | Fichier | Rôle |
 |---|---|
-| `passeport-group-provider-3.0.24.jar` | code du plugin |
-| `passeport-group-provider-3.0.24-services.jar` | descripteur de chargement du plugin |
+| `passeport-group-provider-3.1.0.jar` | code du plugin |
+| `passeport-group-provider-3.1.0-services.jar` | descripteur de chargement du plugin |
 | `INTEGRATION.md` | ce document |
 | `bootstrap-234.jar`, `configuration-234.jar`, `log-234.jar`, `units-1.0.jar` | bibliothèques de configuration (airlift) |
 | `guice-7.0.0.jar`, `aopalliance-1.0.jar`, `jakarta.inject-api-2.0.1.jar`, `jakarta.annotation-api-2.1.1.jar` | injection de dépendances |
@@ -101,12 +103,12 @@ Aucun fichier `LICENSE` ni `NOTICE` n'est fourni avec cette version.
 Vérification de l'intégrité (à faire avant toute installation) :
 
 ```bash
-sha256sum passeport-group-provider-3.0.24.zip      # ou le .tar.gz
+sha256sum passeport-group-provider-3.1.0.zip      # ou le .tar.gz
 # comparer à l'empreinte communiquée avec le livrable
-unzip -l passeport-group-provider-3.0.24.zip       # ou : tar tzf passeport-group-provider-3.0.24.tar.gz
+unzip -l passeport-group-provider-3.1.0.zip       # ou : tar tzf passeport-group-provider-3.1.0.tar.gz
 ```
 
-L'archive doit contenir `passeport-group-provider-3.0.24.jar` et `passeport-group-provider-3.0.24-services.jar`, et aucune entrée `.zip`.
+L'archive doit contenir `passeport-group-provider-3.1.0.jar` et `passeport-group-provider-3.1.0-services.jar`, et aucune entrée `.zip`.
 
 ---
 
@@ -134,7 +136,7 @@ coordinator:
         - |
           set -eu
           mkdir -p /mnt/plugin-staging
-          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.24.zip"
+          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.1.0.zip"
           echo "<sha256-communique-avec-le-livrable>  /mnt/plugin-staging/passeport.zip" | sha256sum -c -
           rm -rf /mnt/plugin-staging/passeport
           mkdir -p /mnt/plugin-staging/passeport
@@ -159,7 +161,7 @@ worker:
         - |
           set -eu
           mkdir -p /mnt/plugin-staging
-          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.24.zip"
+          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.1.0.zip"
           echo "<sha256-communique-avec-le-livrable>  /mnt/plugin-staging/passeport.zip" | sha256sum -c -
           rm -rf /mnt/plugin-staging/passeport
           mkdir -p /mnt/plugin-staging/passeport
@@ -195,7 +197,7 @@ initFile: |
 Variante avec le tar.gz, pour une image d'outils qui n'a ni `wget` ni `unzip` (seulement `curl` et `tar`) : remplacer les lignes de téléchargement et de décompression de l'initContainer par
 
 ```sh
-curl -fsS --cacert <ca-interne.crt> -o /mnt/plugin-staging/passeport.tar.gz "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.0.24.tar.gz"
+curl -fsS --cacert <ca-interne.crt> -o /mnt/plugin-staging/passeport.tar.gz "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.1.0.tar.gz"
 echo "<sha256-du-tar-gz>  /mnt/plugin-staging/passeport.tar.gz" | sha256sum -c -
 rm -rf /mnt/plugin-staging/passeport
 mkdir -p /mnt/plugin-staging/passeport
@@ -218,7 +220,7 @@ Construire une image à partir de l'image SEP autorisée par la CNAM, avec le pl
 ```dockerfile
 FROM <registre-interne>/<image-sep-autorisee>@sha256:<digest>
 # le contexte de build contient le dossier issu de la décompression du zip vérifié
-COPY --chown=<uid-sep>:0 passeport-group-provider-3.0.24/ /usr/lib/starburst/plugin/passeport/
+COPY --chown=<uid-sep>:0 passeport-group-provider-3.1.0/ /usr/lib/starburst/plugin/passeport/
 ```
 
 Vérifier le SHA-256 du zip avant de le décompresser dans le contexte de build. Pour changer de version du plugin, reconstruire l'image.
@@ -309,7 +311,7 @@ Règles de lecture :
 
 - Chaque `code_pa` devient un groupe ; les doublons sont éliminés.
 - `perimetre` est facultatif. Un `code_pa` sans périmètre (absent, vide ou `null`) donne un groupe au périmètre vide, qui signifie **aucune caisse** (section 7), jamais « toutes ».
-- **Périmètre multiple** : une valeur comme `"011,717"` est découpée sur la virgule ; chaque valeur est débarrassée de ses espaces de bord, les valeurs vides sont ignorées. Le périmètre est gardé **par profil** (par `code_pa`), dans l'ordre d'apparition ; les périmètres d'un même `code_pa` répété dans la réponse sont fusionnés, sans doublon. Depuis la 3.0.24, `passeport_perimetre()` ne renvoie plus la réunion des périmètres de tous les profils, mais celui du profil actif (section 7). Une valeur unique comme `TOUS` reste telle quelle. Un périmètre numérique JSON est accepté (converti en texte).
+- **Périmètre multiple** : une valeur comme `"011,717"` est découpée sur la virgule ; chaque valeur est débarrassée de ses espaces de bord, les valeurs vides sont ignorées. Le périmètre est gardé **par profil** (par `code_pa`), dans l'ordre d'apparition ; les périmètres d'un même `code_pa` répété dans la réponse sont fusionnés, sans doublon. `current_passeport_perimetre()` ne renvoie pas la réunion des périmètres de tous les profils, mais celui du profil actif (section 7). Une valeur unique comme `TOUS` reste telle quelle. Un périmètre numérique JSON est accepté (converti en texte).
 - **Filtre sur l'application** : si un élément porte `app.code_app` et qu'il diffère du `code_application` configuré (sans tenir compte de la casse ni des espaces de bord), l'élément est ignoré et un avertissement est journalisé. Un élément sans `app` (forme plate) n'est pas filtré.
 - Un tableau vide `[]` est une réponse valide : l'utilisateur n'a aucun groupe et aucun périmètre.
 - Un avertissement (`WARNING`) est journalisé lorsque **tous** les éléments d'un tableau non vide sont ignorés (autre application), ou lorsqu'aucun groupe n'est trouvé alors que le tableau n'est pas vide.
@@ -319,18 +321,19 @@ Règles de lecture :
 
 ## 7. BIAC : profils, correspondance des groupes et fonctions SQL
 
-### Modèle de profils (depuis la 3.0.24)
+### Modèle de profils
 
 - **Le nom du rôle BIAC est égal au nom du groupe Passeport (`code_pa`).** Un rôle par profil. La correspondance se fait sur le nom, sans tenir compte de la casse ni des espaces de bord.
-- **Un seul profil actif à la fois.** `passeport_perimetre()` renvoie le périmètre du **seul** groupe dont le nom est égal au rôle actif. Les rôles `public` et `sysadmin` ne comptent pas dans le décompte des rôles actifs.
-- Le résultat est un **tableau vide** (aucune ligne visible dans un row filter) dans tous les autres cas : plusieurs rôles actifs, aucun rôle actif, rôle qui ne correspond à aucun groupe Passeport de l'utilisateur, ou deux groupes de l'utilisateur qui ne diffèrent que par la casse (ambiguïté, avertissement dans les logs).
+- **Un seul profil actif à la fois.** `current_passeport_perimetre()` renvoie le périmètre du **seul** groupe dont le nom est égal au rôle actif. Les rôles `public` et `sysadmin` ne comptent pas dans le décompte des rôles actifs.
+- **Plusieurs profils actifs : la requête échoue** avec une erreur `NOT_SUPPORTED` dont le message est `Unsupported multi perimetre: <n> profils actifs [<rôles triés>]. Choisissez un profil avec SET ROLE <profil>`. Seuls les rôles actifs de l'appelant sont listés. Ce contrôle ne dépend que de la session : il est fait avant toute lecture du cache ou de l'API, donc aussi sur un nœud sans group provider.
+- Le résultat est un **tableau vide** (aucune ligne visible dans un row filter) dans les cas suivants : aucun profil actif (aucun rôle, ou seulement `public` et `sysadmin`), rôle qui ne correspond à aucun groupe Passeport de l'utilisateur, ou deux groupes de l'utilisateur qui ne diffèrent que par la casse (ambiguïté, avertissement dans les logs), ou instance du group provider absente là où la fonction est évaluée.
 - Un groupe dont le périmètre est vide (aucun `perimetre` dans la réponse de l'API) donne aussi un tableau vide. Cela signifie **aucune caisse**, et **non** « toutes les caisses » : pour « toutes », il faut une valeur explicite et une règle métier (voir `TOUS` plus bas).
-- L'objectif est d'obliger l'utilisateur à choisir son profil, pour qu'il ne puisse pas joindre des données de caisses relevant de profils différents. Avant la 3.0.24, la fonction renvoyait la réunion des périmètres de tous les groupes (voir section 10 : changement de comportement).
+- L'objectif est d'obliger l'utilisateur à choisir son profil, pour qu'il ne puisse pas joindre des données de caisses relevant de profils différents. Le cas « plusieurs profils » est une erreur explicite, et non un tableau vide, pour qu'il soit diagnostiqué au lieu de passer pour une absence de droits.
 
 Conséquences pour les utilisateurs :
 
-- Il faut **choisir son profil** : `SET ROLE <profil>`. Tant qu'aucun profil unique n'est actif, `passeport_perimetre()` renvoie un tableau vide et les tables filtrées apparaissent vides.
-- Sur CLI et JDBC, **sans `SET ROLE`**, on s'attend à ce que tous les rôles soient actifs ou qu'aucun ne le soit : dans les deux cas, aucun périmètre. La web UI n'active qu'un rôle à la fois. Ce comportement est **à confirmer en recette** (voir l'hypothèse ci-dessous), ainsi que le comportement des outils clients (DBeaver, Power BI, etc.), qui peuvent ouvrir plusieurs sessions ou ne pas permettre `SET ROLE`.
+- Il faut **choisir son profil** : `SET ROLE <profil>`. Tant qu'aucun profil unique n'est actif, `current_passeport_perimetre()` renvoie un tableau vide et les tables filtrées apparaissent vides ; si plusieurs profils sont actifs, les requêtes qui passent par un row filter reposant sur cette fonction **échouent**.
+- **Avertissement : une session CLI ou JDBC sans `SET ROLE` qui active plusieurs rôles verra ses requêtes via row filter échouer.** Il faut exécuter `SET ROLE <profil>` en début de session. La web UI n'active qu'un rôle à la fois. Le comportement d'une session sans `SET ROLE` est **à confirmer en recette** (voir l'hypothèse ci-dessous), ainsi que celui des outils clients (DBeaver, Power BI, etc.), qui peuvent ouvrir plusieurs sessions ou ne pas permettre `SET ROLE`.
 - Pour changer de profil : un nouveau `SET ROLE`. Le périmètre suit immédiatement le rôle actif (le cache ne retient que les groupes et les périmètres de l'utilisateur, pas le rôle actif).
 
 ### Hypothèse sur les rôles actifs
@@ -339,15 +342,16 @@ Le plugin lit les rôles actifs de la session dans l'identité (`getEnabledSyste
 
 1. `public` et `sysadmin` sont retirés de la liste ;
 2. s'il reste **exactement un** rôle et qu'il correspond (sans tenir compte de la casse ni des espaces de bord) à un groupe de l'utilisateur, le périmètre de ce groupe est renvoyé ;
-3. dans tous les autres cas, un tableau vide.
+3. s'il ne reste **aucun** rôle, ou si le rôle restant ne correspond à aucun groupe, un tableau vide ;
+4. s'il reste **plusieurs** rôles, la requête échoue (`Unsupported multi perimetre`).
 
-Si une session sans `SET ROLE` n'exposait qu'un seul rôle (par exemple si les rôles ne sont activés qu'à la demande), ce rôle serait pris pour le profil actif. La « mesure des rôles actifs » de la section 9 lève l'incertitude.
+Si une session sans `SET ROLE` n'exposait qu'un seul rôle (par exemple si les rôles ne sont activés qu'à la demande), ce rôle serait pris pour le profil actif ; si elle les expose tous, ses requêtes via row filter échouent tant que l'utilisateur n'a pas fait `SET ROLE <profil>`. La « mesure des rôles actifs » de la section 9 lève l'incertitude.
 
 ### Correspondance 1:1 entre groupe Passeport et rôle BIAC
 
 SEP n'associe **pas** automatiquement un groupe au rôle BIAC de même nom : dans BIAC, un rôle est **assigné explicitement à un groupe**. Les groupes renvoyés par le group provider (les `code_pa`) sont les noms de groupes auxquels on assigne les rôles (la documentation Starburst indique que `SELECT current_groups()` montre les noms de groupes qui sont mis en correspondance avec les rôles BIAC).
 
-Le principe retenu est un `code_pa` pour un seul rôle, et inversement. **Depuis la 3.0.24, donner au rôle le même nom que le `code_pa` n'est plus une simple convention : `passeport_perimetre()` ne renvoie un périmètre que si le rôle actif porte le nom du groupe.**
+Le principe retenu est un `code_pa` pour un seul rôle, et inversement. **Donner au rôle le même nom que le `code_pa` n'est pas une simple convention : `current_passeport_perimetre()` ne renvoie un périmètre que si le rôle actif porte le nom du groupe.**
 
 Procédure, pour chaque `code_pa` :
 
@@ -359,7 +363,7 @@ Exemple (noms fictifs) :
 
 | Groupe Passeport (`code_pa`) | Rôle BIAC | Privilèges portés par le rôle |
 |---|---|---|
-| `APP_RESEAU` | `APP_RESEAU` (assigné au groupe `APP_RESEAU`) | `SELECT` sur `catalog.schema.table` ; `EXECUTE` sur `passeport_perimetre` ; row filter sur `catalog.schema.table` |
+| `APP_RESEAU` | `APP_RESEAU` (assigné au groupe `APP_RESEAU`) | `SELECT` sur `catalog.schema.table` ; `EXECUTE` sur `current_passeport_perimetre` ; row filter sur `catalog.schema.table` |
 | `APP_LOC` | `APP_LOC` (assigné au groupe `APP_LOC`) | idem |
 
 Les privilèges de table peuvent aussi s'écrire en SQL, par exemple `GRANT SELECT ON catalog.schema.table TO ROLE "APP_LOC"`. L'assignation d'un rôle à un groupe se fait dans l'interface ou l'API BIAC ; sa forme exacte dans votre version de SEP est décrite dans la documentation BIAC de cette version : **à confirmer lors de la recette**. Respecter la casse des noms de groupes (ou utiliser `group-provider.group-case`).
@@ -368,17 +372,18 @@ Un groupe auquel aucun rôle n'est assigné ne donne aucun privilège.
 
 ### `GRANT EXECUTE` sur les fonctions
 
-BIAC traite les fonctions personnalisées comme une entité de privilège (privilège `EXECUTE`). Pour que `passeport_perimetre()` (avec ou sans argument) fonctionne :
+BIAC traite les fonctions personnalisées comme une entité de privilège (privilège `EXECUTE`). Pour que `current_passeport_perimetre()` et `passeport_perimetres(code_pa)` fonctionnent :
 
 - le privilège `EXECUTE` doit être accordé **fonction par fonction** (jamais « toutes les fonctions ») ;
 - il n'est **pas hérité** par l'imbrication de rôles : un rôle qui reçoit un autre rôle ne reçoit pas ses `EXECUTE` sur les fonctions. Comme **un seul rôle de profil est actif à la fois**, il faut l'accorder à **chacun des rôles de profil** (`APP_RESEAU`, `APP_LOC`, etc.), y compris à un rôle qui n'est utilisé qu'à travers un row filter. Ce comportement est à confirmer par la recette ;
 - sans grant, l'appel échoue avec `PERMISSION_DENIED` (comportement fermé).
 
-L'octroi se fait par l'interface de BIAC (privilèges, catégorie fonctions) ou par son API ; la documentation Starburst ne donne pas de syntaxe SQL pour les privilèges sur fonctions. L'entité à désigner : fonction `passeport_perimetre`, dans le schéma `builtin` du catalogue `system` (à confirmer dans votre version de l'interface, notamment si la surcharge `passeport_perimetre(varchar)` est une entité distincte de la forme sans argument : dans ce cas, accorder les deux).
+L'octroi se fait par l'interface de BIAC (privilèges, catégorie fonctions) ou par son API ; la documentation Starburst ne donne pas de syntaxe SQL pour les privilèges sur fonctions. Les entités à désigner : fonctions `current_passeport_perimetre` et `passeport_perimetres`, dans le schéma `builtin` du catalogue `system` (à confirmer dans votre version de l'interface). Ce sont deux noms distincts, sans surcharge.
 
 | Fonction | Qui doit avoir `EXECUTE` |
 |---|---|
-| `passeport_perimetre` (sans argument et avec argument) | chaque rôle de profil |
+| `current_passeport_perimetre` | chaque rôle de profil (row filters) |
+| `passeport_perimetres` | seulement les rôles de diagnostic ou de test ; pas nécessaire aux row filters |
 | `passeport_cache_invalidate` | seulement les rôles qui doivent pouvoir forcer le rafraîchissement de leur propre entrée (administrateurs, rôle de test) ; **pas** tous les profils |
 | `current_user_biac_roles` | rôle de diagnostic ou de test |
 
@@ -386,23 +391,39 @@ L'octroi se fait par l'interface de BIAC (privilèges, catégorie fonctions) ou 
 
 Table avec une colonne `caisse`. Expression à renseigner dans le row filter BIAC de la table.
 
-**Filtre unique pour tous les profils** : il suit le profil actif.
+**Filtre unique pour tous les profils (recommandé)** : il suit le profil actif.
 
 ```sql
-contains(passeport_perimetre(), caisse)
+contains(current_passeport_perimetre(), caisse)
 ```
 
-Une alternative équivalente est `caisse = ANY (passeport_perimetre())`. L'utilisateur ne voit que les lignes dont la caisse figure dans le périmètre de son profil actif. Un périmètre vide (profil sans caisse, plusieurs rôles actifs, aucun profil) donne aucune ligne, de même qu'une colonne `caisse` à `NULL`.
+Une alternative équivalente est `caisse = ANY (current_passeport_perimetre())`. L'utilisateur ne voit que les lignes dont la caisse figure dans le périmètre de son profil actif. Un périmètre vide (profil sans caisse, aucun profil actif) donne aucune ligne, de même qu'une colonne `caisse` à `NULL`. Si plusieurs profils sont actifs, la requête échoue au lieu de renvoyer des lignes.
 
-**Filtre écrit par rôle** : un filtre par rôle, chacun nommant son groupe.
+**Diagnostic** : `passeport_perimetres(code_pa)` renvoie le périmètre du groupe indiqué **si l'utilisateur appelant en est membre**, et un tableau vide sinon.
 
 ```sql
-contains(passeport_perimetre('APP_LOC'), caisse)
+SELECT passeport_perimetres('APP_LOC');
 ```
 
-La forme avec argument renvoie le périmètre du groupe indiqué **seulement si** l'utilisateur appartient à ce groupe **et** que ce rôle est le profil actif (mêmes règles que ci-dessus : un seul rôle actif, `public` et `sysadmin` ignorés) ; sinon un tableau vide. Elle ne peut donc jamais donner plus que la forme sans argument : elle ne renvoie jamais le périmètre d'un autre profil que celui du filtre, même si le filtre est appliqué par erreur à un autre rôle. Le nom du groupe est comparé sans tenir compte de la casse ni des espaces de bord.
+Cette fonction **ne consulte pas le profil actif** : elle renvoie le même résultat quel que soit le `SET ROLE`. Elle ne renvoie jamais le périmètre d'un groupe dont l'appelant n'est pas membre, mais elle **ne garantit pas que le profil actif est ce groupe** ; l'utiliser comme row filter permettrait donc de voir les caisses d'un profil sans l'avoir choisi, et de cumuler les profils. Pour les row filters, utiliser `current_passeport_perimetre()`. Le nom du groupe est comparé sans tenir compte de la casse ni des espaces de bord ; un argument `NULL` ou deux groupes de l'utilisateur qui ne diffèrent que par la casse donnent un tableau vide.
 
 **Valeur `TOUS`** : le plugin ne l'interprète pas. Il renvoie `TOUS` comme n'importe quelle autre valeur. Avec les expressions ci-dessus, un utilisateur dont le périmètre est `["TOUS"]` ne verrait que les lignes dont la caisse vaut littéralement `TOUS`. La signification de `TOUS` (accès à toutes les caisses, ou autre) et l'écriture du filtre correspondante sont une **règle métier à définir par la CNAM** ; le plugin n'en impose aucune.
+
+### Migration depuis la 3.0.x
+
+La 3.1.0 est un **changement cassant** : les fonctions `passeport_perimetre()` et `passeport_perimetre(code_pa)` n'existent plus.
+
+| 3.0.x | 3.1.0 |
+|---|---|
+| `passeport_perimetre()` | `current_passeport_perimetre()` |
+| `passeport_perimetre('<code_pa>')` (row filter écrit par rôle) | `current_passeport_perimetre()` dans le row filter, un seul pour tous les profils ; `passeport_perimetres('<code_pa>')` seulement pour le diagnostic |
+
+À faire lors de la mise à jour :
+
+1. **Réécrire les row filters** qui appellent `passeport_perimetre` : `contains(current_passeport_perimetre(), caisse)`. Tant qu'un row filter référence l'ancienne fonction, les requêtes sur la table échouent (fonction inconnue).
+2. **Recréer les `GRANT EXECUTE` BIAC** sur les nouveaux noms : `current_passeport_perimetre` pour chaque rôle de profil, et `passeport_perimetres` pour les rôles de diagnostic. Les grants existants sur `passeport_perimetre` ne s'appliquent pas aux nouvelles fonctions ; ils peuvent être retirés.
+3. **Prévenir les utilisateurs** : une session CLI ou JDBC sans `SET ROLE` qui active plusieurs rôles verra ses requêtes via row filter **échouer** (`Unsupported multi perimetre`) au lieu de renvoyer un résultat vide comme en 3.0.24. Elles doivent commencer par `SET ROLE <profil>`.
+4. Rejouer la recette de la section 9.
 
 ### Purge du cache de l'utilisateur courant
 
@@ -441,12 +462,13 @@ Un ajout, un retrait ou un changement de périmètre côté Passeport est visibl
 - Une erreur de l'API (code différent de 200, délai dépassé, API injoignable, TLS en échec, réponse de structure inattendue) **fait échouer la requête** de l'utilisateur concerné : il ne reçoit ni groupe ni périmètre « par défaut ». Les autres utilisateurs, dont le cache est valide, ne sont pas affectés.
 - L'échec n'est **pas mis en cache** : la requête suivante réinterroge l'API.
 - Une configuration obligatoire manquante, un truststore illisible ou une valeur invalide empêchent le démarrage du group provider.
-- `passeport_perimetre()` renvoie un tableau vide (aucune ligne n'est visible) quand le profil actif n'est pas déterminé (plusieurs rôles actifs, aucun, aucun groupe de même nom, groupes ambigus), et aussi si l'instance du group provider n'est pas disponible là où elle est évaluée. Voir le point d'attention de la section 9.
+- `current_passeport_perimetre()` renvoie un tableau vide (aucune ligne n'est visible) quand le profil actif n'est pas déterminé (aucun profil actif, aucun groupe de même nom, groupes ambigus), et aussi si l'instance du group provider n'est pas disponible là où elle est évaluée. Si plusieurs profils sont actifs, elle fait échouer la requête (`NOT_SUPPORTED`). Voir le point d'attention de la section 9.
+- `passeport_perimetres(code_pa)` renvoie un tableau vide dans les mêmes situations d'indisponibilité (utilisateur non membre du groupe, `NULL`, groupes ambigus, instance absente).
 
 ### Logs
 
 - Les logs du plugin utilisent le logger `io.starburst.cnam.passeport`.
-- Niveaux : `WARNING` pour un code HTTP inattendu, un élément ignoré (autre application), tous les éléments ignorés ou aucun groupe trouvé dans un tableau non vide, deux groupes ambigus pour le rôle actif, une purge évaluée sur un nœud sans group provider, `SEVERE` (avec trace) pour un échec d'appel, `DEBUG` pour le détail d'un appel (« Fetching Passeport data for user ») et pour une purge de cache (« Passeport cache entry invalidated for user »).
+- Niveaux : `WARNING` pour un code HTTP inattendu, un élément ignoré (autre application), tous les éléments ignorés ou aucun groupe trouvé dans un tableau non vide, deux groupes ambigus pour le rôle actif ou le groupe demandé, une purge évaluée sur un nœud sans group provider, `SEVERE` (avec trace) pour un échec d'appel, `DEBUG` pour le détail d'un appel (« Fetching Passeport data for user ») et pour une purge de cache (« Passeport cache entry invalidated for user »).
 - Activer le niveau DEBUG dans `etc/log.properties` du coordinator :
 
 ```properties
@@ -495,43 +517,44 @@ Sur un worker : l'absence d'erreur au chargement du plugin.
 ### Contrôles de base (connecté avec l'utilisateur de test, via le SSO)
 
 ```sql
-SHOW FUNCTIONS LIKE 'passeport%';      -- passeport_perimetre doit apparaître
+SHOW FUNCTIONS LIKE '%passeport%';     -- current_passeport_perimetre, passeport_perimetres et passeport_cache_invalidate doivent apparaître
 SELECT current_groups();               -- groupes de l'utilisateur courant (fonction à vérifier dans votre version de SEP)
-SELECT passeport_perimetre();          -- périmètre du profil actif (vide tant qu'un seul profil n'est pas actif)
+SELECT current_passeport_perimetre();  -- périmètre du profil actif (vide si aucun profil n'est actif ; erreur si plusieurs)
+SELECT passeport_perimetres('<code_pa>');  -- périmètre du groupe si l'utilisateur en est membre (ne dépend pas du profil actif)
 SELECT current_user_biac_roles();      -- rôles actifs de la session (diagnostic)
 ```
 
-Si `current_groups()` n'est pas disponible, utiliser l'interface de BIAC ou le niveau DEBUG des logs pour observer les groupes. `passeport_perimetre()` exige le `GRANT EXECUTE` de la section 7 : sans lui, `PERMISSION_DENIED` est le résultat attendu. Depuis la 3.0.24, un tableau vide est aussi le résultat normal tant que l'utilisateur n'a pas choisi son profil (`SET ROLE <profil>`).
+Si `current_groups()` n'est pas disponible, utiliser l'interface de BIAC ou le niveau DEBUG des logs pour observer les groupes. `current_passeport_perimetre()` et `passeport_perimetres()` exigent le `GRANT EXECUTE` de la section 7 : sans lui, `PERMISSION_DENIED` est le résultat attendu. Un tableau vide est le résultat normal pour `current_passeport_perimetre()` tant qu'aucun profil n'est actif ; l'erreur `Unsupported multi perimetre` est le résultat normal tant que plusieurs profils sont actifs (`SET ROLE <profil>` la fait disparaître).
 
-Point d'attention à vérifier : l'appel `passeport_perimetre()` doit renvoyer le périmètre attendu, et non un tableau vide, depuis une requête qui lit une table filtrée (row filter). Un tableau vide inattendu, alors que `SELECT passeport_perimetre()` seul est correct avec le même rôle actif, indique que la fonction est évaluée sur un nœud sans group provider configuré (worker). À signaler dans ce cas.
+Point d'attention à vérifier : l'appel `current_passeport_perimetre()` doit renvoyer le périmètre attendu, et non un tableau vide, depuis une requête qui lit une table filtrée (row filter). Un tableau vide inattendu, alors que `SELECT current_passeport_perimetre()` seul est correct avec le même rôle actif, indique que la fonction est évaluée sur un nœud sans group provider configuré (worker). À signaler dans ce cas.
 
 ### Mesure des rôles actifs (à faire en premier : fixe l'hypothèse de la section 7)
 
-Avec un utilisateur de test qui a au moins deux profils (rôles de même nom que ses groupes) et `EXECUTE` sur `current_user_biac_roles` et `passeport_perimetre`, **chaque cas dans une session neuve**, et relever le résultat :
+Avec un utilisateur de test qui a au moins deux profils (rôles de même nom que ses groupes) et `EXECUTE` sur `current_user_biac_roles` et `current_passeport_perimetre`, **chaque cas dans une session neuve** (un cas qui active plusieurs profils fait échouer `current_passeport_perimetre()` : relever alors `current_user_biac_roles()` seul), et relever le résultat :
 
 ```sql
 -- cas 1 : sans SET ROLE
-SELECT current_user_biac_roles(), passeport_perimetre();
+SELECT current_user_biac_roles(), current_passeport_perimetre();
 -- cas 2 : tous les rôles
 SET ROLE ALL;
-SELECT current_user_biac_roles(), passeport_perimetre();
+SELECT current_user_biac_roles(), current_passeport_perimetre();
 -- cas 3 : un profil
 SET ROLE <profil>;
-SELECT current_user_biac_roles(), passeport_perimetre();
+SELECT current_user_biac_roles(), current_passeport_perimetre();
 ```
 
-Résultats attendus : cas 3 = `[<profil>]` (éventuellement avec `public`) et le périmètre de ce seul groupe ; cas 1 et cas 2 = `[]` pour le périmètre si plusieurs rôles (ou aucun) sont actifs. **Si le cas 1 ou le cas 2 ne renvoie qu'un seul rôle de profil, le périmètre de ce profil est renvoyé : relever la valeur exacte de `current_user_biac_roles()` dans chaque cas et la transmettre à l'équipe du plugin.**
+Résultats attendus : cas 3 = `[<profil>]` (éventuellement avec `public`) et le périmètre de ce seul groupe ; cas 1 et cas 2 = `[]` pour le périmètre si aucun rôle de profil n'est actif, ou l'erreur `Unsupported multi perimetre` si plusieurs le sont. **Si le cas 1 ou le cas 2 ne renvoie qu'un seul rôle de profil, le périmètre de ce profil est renvoyé : relever la valeur exacte de `current_user_biac_roles()` dans chaque cas et la transmettre à l'équipe du plugin.**
 
 ### T01 : affectation simple
 
 1. Utilisateur de test sans aucun groupe Passeport : `SELECT current_groups()` ne renvoie aucun groupe ; l'accès aux objets protégés est refusé.
 2. Affecter l'utilisateur à **un seul** profil Passeport correspondant à un rôle BIAC de même nom. Attendre la propagation (au plus le TTL, section 8, ou purge de la section 7), ou ouvrir une nouvelle session après expiration.
-3. Résultat attendu : le groupe unique apparaît ; avec `SET ROLE <profil>`, `SELECT` réussit sur les objets accordés au rôle ; l'accès à tout objet hors du rôle est refusé ; `passeport_perimetre()` renvoie le périmètre du profil.
+3. Résultat attendu : le groupe unique apparaît ; avec `SET ROLE <profil>`, `SELECT` réussit sur les objets accordés au rôle ; l'accès à tout objet hors du rôle est refusé ; `current_passeport_perimetre()` renvoie le périmètre du profil.
 
 ### T02 : cas combinatoire (plusieurs profils)
 
 1. Reproduire pour un utilisateur de test l'affectation multi-profils fournie par la CNAM (plusieurs profils, plusieurs domaines, plusieurs caisses, y compris un `perimetre` multiple du type `"011,717"`).
-2. Résultat attendu : les groupes sont l'ensemble des profils (`current_groups()` inchangé) ; sous `SET ROLE <profil A>`, `passeport_perimetre()` renvoie le périmètre du profil A **seul** (une valeur `"011,717"` donne deux éléments, sans doublon, dans l'ordre de la réponse de l'API) ; sous `SET ROLE <profil B>`, celui de B seul ; avec deux rôles actifs (`SET ROLE ALL`), un tableau vide ; les lignes visibles correspondent exactement au périmètre du profil actif, sans droit en excès ni cumul entre profils.
+2. Résultat attendu : les groupes sont l'ensemble des profils (`current_groups()` inchangé) ; sous `SET ROLE <profil A>`, `current_passeport_perimetre()` renvoie le périmètre du profil A **seul** (une valeur `"011,717"` donne deux éléments, sans doublon, dans l'ordre de la réponse de l'API) ; sous `SET ROLE <profil B>`, celui de B seul ; avec deux rôles actifs (`SET ROLE ALL`), l'erreur `Unsupported multi perimetre` (et non un résultat), y compris à travers un row filter ; `passeport_perimetres('<code_pa>')` renvoie le périmètre du groupe indiqué quel que soit le rôle actif, et un tableau vide pour un groupe dont l'utilisateur n'est pas membre ; les lignes visibles correspondent exactement au périmètre du profil actif, sans droit en excès ni cumul entre profils.
 3. Vérifier le profil sans périmètre (groupe sans `perimetre`) : aucune ligne visible sous ce rôle.
 4. Relever pour chaque cas le résultat de `current_user_biac_roles()` (voir « Mesure des rôles actifs »).
 
@@ -542,11 +565,11 @@ Résultats attendus : cas 3 = `[<profil>]` (éventuellement avec `public`) et le
 
 ### T07 : purge du cache
 
-1. Avec un utilisateur de test qui a `EXECUTE` sur `passeport_cache_invalidate` et `passeport_perimetre`, sous `SET ROLE <profil>`, relever `SELECT passeport_perimetre();`.
+1. Avec un utilisateur de test qui a `EXECUTE` sur `passeport_cache_invalidate` et `current_passeport_perimetre`, sous `SET ROLE <profil>`, relever `SELECT current_passeport_perimetre();`.
 2. Côté Passeport (ou dans le simulateur), modifier le périmètre de ce profil pour cet utilisateur.
-3. Avant la fin du TTL, relever de nouveau `SELECT passeport_perimetre();` : l'ancienne valeur est attendue (cache).
+3. Avant la fin du TTL, relever de nouveau `SELECT current_passeport_perimetre();` : l'ancienne valeur est attendue (cache).
 4. `SELECT passeport_cache_invalidate();` : résultat `true`. Un `false` indique que la fonction n'a pas été évaluée sur le coordinator : relever l'heure et les logs du coordinator et du worker (avertissement « evaluated on a node without Passeport service »).
-5. `SELECT passeport_perimetre();` : la nouvelle valeur est attendue, sans attendre le TTL ni redémarrer.
+5. `SELECT current_passeport_perimetre();` : la nouvelle valeur est attendue, sans attendre le TTL ni redémarrer.
 6. Contrôle de portée : un second utilisateur déjà en cache n'est pas affecté (aucun nouvel appel API pour lui dans les logs DEBUG). Sans `EXECUTE`, l'appel donne `PERMISSION_DENIED`.
 
 ### Tests d'erreur (facultatifs, environnement de test)
@@ -558,10 +581,12 @@ Résultats attendus : cas 3 = `[<profil>]` (éventuellement avec `public`) et le
 
 ## 10. Retour arrière
 
-**Changement de comportement par rapport à la 3.0.23** : jusqu'à la 3.0.23, `passeport_perimetre()` renvoyait la **réunion** des périmètres de tous les groupes de l'utilisateur, quel que soit le rôle actif. Depuis la 3.0.24, elle renvoie le périmètre du **seul** groupe dont le nom est le rôle actif, et un tableau vide dans tous les autres cas. Les effets à attendre, dans les deux sens :
+**Changements de comportement entre versions** :
 
-- à la mise à jour vers la 3.0.24 : les row filters qui s'appuient sur `passeport_perimetre()` n'affichent plus rien tant que l'utilisateur n'a pas choisi son profil, et tant que les rôles BIAC ne portent pas exactement les noms des groupes (section 7) ;
-- au retour arrière vers la 3.0.23 : les périmètres de tous les profils d'un utilisateur sont de nouveau fusionnés, quel que soit le rôle actif (droits plus larges). Les fonctions `passeport_perimetre(varchar)` et `passeport_cache_invalidate()` disparaissent : retirer les row filters qui les utilisent avant le retour arrière, sinon ces requêtes échouent.
+- **3.1.0 par rapport à la 3.0.x (changement cassant)** : `passeport_perimetre()` et `passeport_perimetre(varchar)` sont remplacées par `current_passeport_perimetre()` et `passeport_perimetres(varchar)`, et plusieurs profils actifs font échouer la requête au lieu de donner un tableau vide (section 7, « Migration depuis la 3.0.x »). Retour arrière 3.1.0 vers 3.0.24 : **avant** le retour arrière, remettre les row filters sur `passeport_perimetre()` (la fonction `current_passeport_perimetre()` n'existe pas en 3.0.x) et recréer les `GRANT EXECUTE` sur ce nom, sinon les requêtes sur les tables filtrées échouent.
+- **3.0.24 par rapport à la 3.0.23** : jusqu'à la 3.0.23, `passeport_perimetre()` renvoyait la **réunion** des périmètres de tous les groupes de l'utilisateur, quel que soit le rôle actif. Depuis la 3.0.24, elle renvoie le périmètre du **seul** groupe dont le nom est le rôle actif, et un tableau vide dans tous les autres cas. Les effets à attendre, dans les deux sens :
+  - à la mise à jour vers la 3.0.24 : les row filters qui s'appuient sur `passeport_perimetre()` n'affichent plus rien tant que l'utilisateur n'a pas choisi son profil, et tant que les rôles BIAC ne portent pas exactement les noms des groupes (section 7) ;
+  - au retour arrière vers la 3.0.23 : les périmètres de tous les profils d'un utilisateur sont de nouveau fusionnés, quel que soit le rôle actif (droits plus larges). Les fonctions `passeport_perimetre(varchar)` et `passeport_cache_invalidate()` disparaissent : retirer les row filters qui les utilisent avant le retour arrière, sinon ces requêtes échouent.
 
 Procédure :
 

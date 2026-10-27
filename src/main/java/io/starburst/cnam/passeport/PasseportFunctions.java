@@ -1,6 +1,7 @@
 package io.starburst.cnam.passeport;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -10,6 +11,8 @@ import java.util.logging.Logger;
 
 import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
+import io.trino.spi.StandardErrorCode;
+import io.trino.spi.TrinoException;
 import io.trino.spi.block.Block;
 import io.trino.spi.block.BlockBuilder;
 import io.trino.spi.connector.ConnectorSession;
@@ -23,24 +26,34 @@ import io.trino.spi.type.VarcharType;
 /**
  * Fonctions SQL liées à Passeport.
  *
- * <h2>Modèle de profils (depuis 3.0.24)</h2>
- * Le nom d'un rôle BIAC est égal au nom d'un groupe Passeport ({@code code_pa}). {@code passeport_perimetre()} renvoie le
- * périmètre du <b>seul</b> groupe dont le nom est le rôle actif ; dans tous les autres cas, un tableau vide.
- * (Changement de comportement : jusqu'à la 3.0.23, la fonction renvoyait la réunion des périmètres de tous les groupes.)
+ * <h2>Modèle de profils (depuis 3.1.0)</h2>
+ * Le nom d'un rôle BIAC est égal au nom d'un groupe Passeport ({@code code_pa}). Deux fonctions, aux rôles distincts :
+ * <ul>
+ *   <li>{@code current_passeport_perimetre()} : périmètre du <b>profil actif</b>, c'est-à-dire du seul groupe dont le nom
+ *       est le rôle actif. À utiliser dans les row filters. <b>Plusieurs profils actifs : la requête échoue</b>
+ *       ({@code NOT_SUPPORTED}, « Unsupported multi perimetre ») au lieu de renvoyer un tableau vide.</li>
+ *   <li>{@code passeport_perimetres(code_pa)} : périmètre du groupe donné si l'utilisateur appelant en est membre,
+ *       sans consulter le profil actif. Pour le diagnostic ; elle ne vérifie pas le profil actif et ne doit pas servir
+ *       de row filter à elle seule.</li>
+ * </ul>
+ * Les anciennes {@code passeport_perimetre()} et {@code passeport_perimetre(varchar)} (3.0.24) sont supprimées (changement
+ * cassant). Dans tous les cas, un périmètre vide signifie « aucune caisse », jamais « toutes ».
  *
- * <h2>Hypothèse sur les rôles actifs (à confirmer sur le lab)</h2>
+ * <h2>Rôles actifs</h2>
  * Les rôles actifs sont lus dans {@code session.getIdentity().getEnabledSystemRoles()}. Mesuré : sous
  * {@code SET ROLE sysadmin}, la valeur est {@code [sysadmin]}. Ce qui est renvoyé sans {@code SET ROLE} et sous
- * {@code SET ROLE ALL} n'a <b>pas</b> pu être mesuré. La logique ne dépend donc que de l'hypothèse minimale suivante :
- * les rôles {@code public} et {@code sysadmin} sont ignorés (casse et espaces de bord indifférents), et il faut qu'il
- * reste <b>exactement un</b> rôle pour qu'un périmètre soit renvoyé. Si une session sans {@code SET ROLE} ou sous
- * {@code SET ROLE ALL} expose plusieurs rôles (ou aucun), le résultat est {@code []} (fail closed) ; si elle n'en expose
- * qu'un, ce rôle est pris pour le profil actif.
+ * {@code SET ROLE ALL} n'a <b>pas</b> pu être mesuré. Les rôles {@code public} et {@code sysadmin} sont ignorés (casse et
+ * espaces de bord indifférents) ; les autres sont des profils. Un profil : il est le profil actif. Aucun : pas de profil
+ * actif, résultat {@code []}. Plusieurs : erreur. Une session sans {@code SET ROLE} qui active plusieurs rôles voit donc ses
+ * requêtes passant par un row filter échouer : il faut choisir un profil avec {@code SET ROLE <profil>}.
  *
  * <h2>Où les fonctions s'exécutent</h2>
  * Le cache et le group provider n'existent que sur le coordinator. Ces fonctions sont déterministes (valeur par défaut) :
  * l'optimiseur de Trino évalue donc un appel à arguments constants à la planification, sur le coordinator, avant l'envoi
  * aux workers. Si l'appel était évalué sur un worker, le service est absent : périmètre vide, invalidation à {@code false}.
+ * Le contrôle « plusieurs profils » de {@code current_passeport_perimetre()} ne dépend que de la session et est fait
+ * <b>avant</b> toute lecture du service : l'erreur sort aussi sur un nœud sans service, elle n'est pas masquée par un
+ * tableau vide.
  */
 public final class PasseportFunctions {
     private static final Logger log = Logger.getLogger(PasseportFunctions.class.getName());
@@ -50,21 +63,21 @@ public final class PasseportFunctions {
 
     private PasseportFunctions() {}
 
-    @ScalarFunction("passeport_perimetre")
-    @Description("Perimetre of the Passeport group named like the single active role; empty array if several roles are active, none, or no group matches")
+    @ScalarFunction("current_passeport_perimetre")
+    @Description("Perimetre of the Passeport group named like the single active profile (role); empty array if no profile is active or no group matches; fails if several profiles are active")
     @SqlType("array(varchar)")
-    public static Block getPasseportPerimetre(ConnectorSession session) {
-        return toBlock(perimetreOfActiveProfile(session, Optional.empty()));
+    public static Block getCurrentPasseportPerimetre(ConnectorSession session) {
+        return toBlock(currentPerimetre(session));
     }
 
-    @ScalarFunction("passeport_perimetre")
-    @Description("Perimetre of the given Passeport group, only if the user belongs to it and its role is the single active role; empty array otherwise")
+    @ScalarFunction("passeport_perimetres")
+    @Description("Perimetre of the given Passeport group if the calling user is a member of it; empty array otherwise. Does not check the active profile")
     @SqlType("array(varchar)")
-    public static Block getPasseportPerimetreOfGroup(ConnectorSession session, @SqlNullable @SqlType(StandardTypes.VARCHAR) Slice codePa) {
+    public static Block getPasseportPerimetresOfGroup(ConnectorSession session, @SqlNullable @SqlType(StandardTypes.VARCHAR) Slice codePa) {
         if (codePa == null) {
             return toBlock(List.of());
         }
-        return toBlock(perimetreOfActiveProfile(session, Optional.of(codePa.toStringUtf8())));
+        return toBlock(perimetresOfGroup(session, codePa.toStringUtf8()));
     }
 
     /**
@@ -109,40 +122,63 @@ public final class PasseportFunctions {
         return toBlock(new ArrayList<>(roles));
     }
 
-    private static List<String> perimetreOfActiveProfile(ConnectorSession session, Optional<String> requestedGroup) {
+    private static List<String> currentPerimetre(ConnectorSession session) {
         if (session == null || session.getUser() == null || session.getIdentity() == null) {
+            return List.of();
+        }
+        // Contrôle multi-profils d'abord : il ne dépend que de la session, il doit sortir même si le service est absent.
+        Optional<String> profile = requireAtMostOneProfile(session.getIdentity().getEnabledSystemRoles());
+        if (profile.isEmpty()) {
             return List.of();
         }
         PasseportAuthService authService = PasseportAuthService.getGlobalInstance();
         if (authService == null) {
             return List.of();
         }
-        Map<String, List<String>> byGroup = authService.getPerimetresByGroup(session.getUser());
-        return resolvePerimetre(session.getIdentity().getEnabledSystemRoles(), byGroup, requestedGroup);
+        return resolveGroupPerimetre(authService.getPerimetresByGroup(session.getUser()), profile.get());
+    }
+
+    private static List<String> perimetresOfGroup(ConnectorSession session, String requestedGroup) {
+        if (session == null || session.getUser() == null) {
+            return List.of();
+        }
+        PasseportAuthService authService = PasseportAuthService.getGlobalInstance();
+        if (authService == null) {
+            return List.of();
+        }
+        return resolveGroupPerimetre(authService.getPerimetresByGroup(session.getUser()), requestedGroup);
     }
 
     /**
-     * Cœur de la règle, sans dépendance à SEP.
+     * Cœur de {@code current_passeport_perimetre()}, sans dépendance à SEP.
      *
      * @param enabledRoles rôles actifs de la session
      * @param perimetresByGroup périmètre de chaque groupe de l'utilisateur ({@code code_pa} vers périmètre)
-     * @param requestedGroup groupe demandé par la surcharge, vide pour {@code passeport_perimetre()}
-     * @return le périmètre du groupe du rôle actif ; liste vide dans tous les autres cas. Un groupe dont le périmètre
-     *         est vide donne aussi une liste vide : cela signifie « aucune caisse » (jamais « toutes »).
+     * @return le périmètre du groupe du profil actif ; liste vide si aucun profil n'est actif ou si aucun groupe ne
+     *         porte son nom. Un groupe dont le périmètre est vide donne aussi une liste vide : « aucune caisse ».
+     * @throws TrinoException {@code NOT_SUPPORTED} si plusieurs profils sont actifs
      */
-    static List<String> resolvePerimetre(Set<String> enabledRoles, Map<String, List<String>> perimetresByGroup, Optional<String> requestedGroup) {
-        Optional<String> activeProfile = activeProfile(enabledRoles);
-        if (activeProfile.isEmpty()) {
+    static List<String> resolveCurrentPerimetre(Set<String> enabledRoles, Map<String, List<String>> perimetresByGroup) {
+        Optional<String> profile = requireAtMostOneProfile(enabledRoles);
+        if (profile.isEmpty()) {
             return List.of();
         }
-        String profile = activeProfile.get();
-        // Surcharge : le groupe demandé doit être le profil actif, sinon rien (jamais le périmètre d'un autre profil).
-        if (requestedGroup.isPresent() && !sameName(requestedGroup.get(), profile)) {
+        return resolveGroupPerimetre(perimetresByGroup, profile.get());
+    }
+
+    /**
+     * Périmètre du groupe {@code requestedGroup} parmi les groupes de l'utilisateur (donc : seulement s'il en est membre,
+     * l'appelant n'obtient jamais le périmètre d'un groupe qui n'est pas le sien). Casse et espaces de bord ignorés.
+     * Aucun groupe, ou plusieurs qui ne diffèrent que par la casse ou les blancs de bord : liste vide (le second cas avec
+     * un WARNING : on ne devine pas lequel est le bon).
+     */
+    static List<String> resolveGroupPerimetre(Map<String, List<String>> perimetresByGroup, String requestedGroup) {
+        if (requestedGroup == null || perimetresByGroup == null) {
             return List.of();
         }
         List<String> matches = new ArrayList<>();
         for (String group : perimetresByGroup.keySet()) {
-            if (sameName(group, profile)) {
+            if (group != null && sameName(group, requestedGroup)) {
                 matches.add(group);
             }
         }
@@ -150,33 +186,42 @@ public final class PasseportFunctions {
             return List.of();
         }
         if (matches.size() > 1) {
-            // Deux code_pa qui ne diffèrent que par la casse ou les blancs de bord : on ne devine pas lequel est le bon.
-            log.warning("Ambiguous match: " + matches.size() + " Passeport groups equal the active role '" + profile
+            log.warning("Ambiguous match: " + matches.size() + " Passeport groups equal '" + requestedGroup
                     + "' ignoring case and surrounding spaces; returning an empty perimetre");
             return List.of();
         }
-        return perimetresByGroup.get(matches.get(0));
+        List<String> perimetre = perimetresByGroup.get(matches.get(0));
+        return perimetre == null ? List.of() : perimetre;
     }
 
     /**
-     * Le profil actif : l'unique rôle restant après retrait de {@code public} et {@code sysadmin}. Plusieurs rôles ou
-     * aucun : pas de profil. Les rôles sont comptés tels que reçus (deux rôles qui ne diffèrent que par la casse
-     * comptent pour deux).
+     * Le profil actif : l'unique rôle restant après retrait de {@code public} et {@code sysadmin}. Aucun : vide.
+     * Plusieurs : {@code TrinoException(NOT_SUPPORTED)} qui ne liste que les rôles de l'appelant. Les rôles sont comptés
+     * tels que reçus (deux rôles qui ne diffèrent que par la casse comptent pour deux).
      */
-    static Optional<String> activeProfile(Set<String> enabledRoles) {
+    static Optional<String> requireAtMostOneProfile(Set<String> enabledRoles) {
+        List<String> profiles = activeProfiles(enabledRoles);
+        if (profiles.size() > 1) {
+            throw new TrinoException(StandardErrorCode.NOT_SUPPORTED,
+                    "Unsupported multi perimetre: " + profiles.size() + " profils actifs " + profiles
+                            + ". Choisissez un profil avec SET ROLE <profil>");
+        }
+        return profiles.isEmpty() ? Optional.empty() : Optional.of(profiles.get(0));
+    }
+
+    /** Rôles actifs hors {@code public} et {@code sysadmin} (et hors valeur nulle), triés. */
+    static List<String> activeProfiles(Set<String> enabledRoles) {
         if (enabledRoles == null) {
-            return Optional.empty();
+            return List.of();
         }
         List<String> profiles = new ArrayList<>();
         for (String role : enabledRoles) {
-            if (role == null || !NON_PROFILE_ROLES.contains(role.strip().toLowerCase(Locale.ROOT))) {
+            if (role != null && !NON_PROFILE_ROLES.contains(role.strip().toLowerCase(Locale.ROOT))) {
                 profiles.add(role);
             }
         }
-        if (profiles.size() != 1 || profiles.get(0) == null) {
-            return Optional.empty();
-        }
-        return Optional.of(profiles.get(0));
+        Collections.sort(profiles);
+        return profiles;
     }
 
     private static boolean sameName(String left, String right) {
