@@ -1,7 +1,7 @@
 # Instructions pour les agents
 
 ## Projet
-- **Type** : plugin Trino / Starburst Enterprise (SEP), SPI 482, Java 25.
+- **Type** : plugin Trino / Starburst Enterprise (SEP), SPI 483 (SEP 2026.6.1), Java 25.
 - **Objet** : group provider et fonctions SQL branchés sur l'API d'habilitations Passeport. Voir `README.md` (composants, build) et `INTEGRATION.md` (installation, configuration, recette, destiné aux équipes techniques du client).
 
 ## Build et tests
@@ -12,7 +12,7 @@
 
 ## Conventions SPI
 - `trino-spi`, Jackson (annotations) et OpenTelemetry en `<scope>provided</scope>`.
-- API Trino 482 : ne pas utiliser d'anciennes conventions (contextes de sécurité historiques, anciens registres de fonctions).
+- API Trino 483 : ne pas utiliser d'anciennes conventions (contextes de sécurité historiques, anciens registres de fonctions).
 - Dépendances embarquées : seulement ce que le plugin charge réellement (airlift configuration/bootstrap, Guice, Guava, Jackson databind, validation). Après tout changement de dépendances, vérifier le contenu du zip et charger `PasseportGroupProviderFactory` sur le seul classpath du zip.
 - Classes : `PasseportPlugin` (enregistrement), `PasseportGroupProvider` / `PasseportAuthService` (appel API, cache Guava) / `PasseportResponseParser` (lecture de la réponse) / `PasseportConfig` (propriétés), `PasseportFunctions` (périmètre du profil actif, périmètre d'un groupe, purge du cache de l'utilisateur), `HashFunctions`, `PseudonymizeFunctions` + `Pseudonymizer`, `PasseportSystemAccessControl`.
 

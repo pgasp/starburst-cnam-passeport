@@ -1,6 +1,6 @@
 # Plugin Passeport pour Starburst Enterprise : mode opératoire d'intégration
 
-Version du plugin : 3.1.0. Document destiné aux équipes techniques chargées de l'installation, de la configuration et de la recette.
+Version du plugin : 3.1.1. Document destiné aux équipes techniques chargées de l'installation, de la configuration et de la recette.
 
 Ce document couvre le group provider, les fonctions SQL de périmètre (modèle de profils) et la purge du cache, pour les tests T01 à T03 et T07.
 
@@ -37,16 +37,16 @@ Le plugin embarque aussi un composant de contrôle d'accès système (`access-co
 
 | Élément | Valeur |
 |---|---|
-| SPI Trino | 482 (le plugin est compilé contre `trino-spi` 482) |
+| SPI Trino | 483 (le plugin est compilé contre `trino-spi` 483 ; les jars du plugin 3.1.0, compilé contre 482, ne référencent aucune signature modifiée entre 482 et 483) |
 | Java | 25 (classes compilées pour Java 25 ; une JVM plus ancienne refuse de charger le plugin avec `UnsupportedClassVersionError`) |
-| Version SEP visée | 482-e |
+| Version SEP visée | 2026.6.1 LTS (Trino 483, JDK Temurin 25) ; 482-e reste compatible (API utilisée inchangée) |
 | Version SEP 480-e | compatibilité **à valider** |
 
 Vérification, avant installation :
 
 1. Version du serveur : `SELECT version();` (ou la page d'information du cluster).
 2. Version de Java du coordinator : `kubectl exec <pod-coordinator> -- java -version` (ou `oc exec`).
-3. Sur une version SEP différente de la 482-e (par exemple la 480-e), installer le plugin sur un environnement de test et dérouler la recette de la section 9. Une incompatibilité d'API du SPI se manifeste au démarrage ou au premier appel par `NoSuchMethodError`, `NoClassDefFoundError` ou `AbstractMethodError` dans les logs du coordinator.
+3. Sur une version SEP différente de la 2026.6.1 (par exemple la 480-e), installer le plugin sur un environnement de test et dérouler la recette de la section 9. Une incompatibilité d'API du SPI se manifeste au démarrage ou au premier appel par `NoSuchMethodError`, `NoClassDefFoundError` ou `AbstractMethodError` dans les logs du coordinator.
 
 ### Flux réseau vers l'API
 
@@ -83,14 +83,14 @@ Le plugin interroge l'API avec l'identifiant de l'utilisateur tel que le voit SE
 
 ## 3. Contenu et vérification du livrable
 
-Livrable : `passeport-group-provider-3.1.0.zip` **ou** `passeport-group-provider-3.1.0.tar.gz` (même contenu, mêmes jars, même dossier racine ; le tar.gz sert aux images d'init qui n'ont que `curl` et `tar`), chacun accompagné de son empreinte SHA-256 communiquée séparément.
+Livrable : `passeport-group-provider-3.1.1.zip` **ou** `passeport-group-provider-3.1.1.tar.gz` (même contenu, mêmes jars, même dossier racine ; le tar.gz sert aux images d'init qui n'ont que `curl` et `tar`), chacun accompagné de son empreinte SHA-256 communiquée séparément.
 
-Contenu : un dossier unique `passeport-group-provider-3.1.0/` contenant
+Contenu : un dossier unique `passeport-group-provider-3.1.1/` contenant
 
 | Fichier | Rôle |
 |---|---|
-| `passeport-group-provider-3.1.0.jar` | code du plugin |
-| `passeport-group-provider-3.1.0-services.jar` | descripteur de chargement du plugin |
+| `passeport-group-provider-3.1.1.jar` | code du plugin |
+| `passeport-group-provider-3.1.1-services.jar` | descripteur de chargement du plugin |
 | `INTEGRATION.md` | ce document |
 | `bootstrap-234.jar`, `configuration-234.jar`, `log-234.jar`, `units-1.0.jar` | bibliothèques de configuration (airlift) |
 | `guice-7.0.0.jar`, `aopalliance-1.0.jar`, `jakarta.inject-api-2.0.1.jar`, `jakarta.annotation-api-2.1.1.jar` | injection de dépendances |
@@ -103,12 +103,12 @@ Aucun fichier `LICENSE` ni `NOTICE` n'est fourni avec cette version.
 Vérification de l'intégrité (à faire avant toute installation) :
 
 ```bash
-sha256sum passeport-group-provider-3.1.0.zip      # ou le .tar.gz
+sha256sum passeport-group-provider-3.1.1.zip      # ou le .tar.gz
 # comparer à l'empreinte communiquée avec le livrable
-unzip -l passeport-group-provider-3.1.0.zip       # ou : tar tzf passeport-group-provider-3.1.0.tar.gz
+unzip -l passeport-group-provider-3.1.1.zip       # ou : tar tzf passeport-group-provider-3.1.1.tar.gz
 ```
 
-L'archive doit contenir `passeport-group-provider-3.1.0.jar` et `passeport-group-provider-3.1.0-services.jar`, et aucune entrée `.zip`.
+L'archive doit contenir `passeport-group-provider-3.1.1.jar` et `passeport-group-provider-3.1.1-services.jar`, et aucune entrée `.zip`.
 
 ---
 
@@ -136,7 +136,7 @@ coordinator:
         - |
           set -eu
           mkdir -p /mnt/plugin-staging
-          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.1.0.zip"
+          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.1.1.zip"
           echo "<sha256-communique-avec-le-livrable>  /mnt/plugin-staging/passeport.zip" | sha256sum -c -
           rm -rf /mnt/plugin-staging/passeport
           mkdir -p /mnt/plugin-staging/passeport
@@ -161,7 +161,7 @@ worker:
         - |
           set -eu
           mkdir -p /mnt/plugin-staging
-          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.1.0.zip"
+          wget -O /mnt/plugin-staging/passeport.zip "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.1.1.zip"
           echo "<sha256-communique-avec-le-livrable>  /mnt/plugin-staging/passeport.zip" | sha256sum -c -
           rm -rf /mnt/plugin-staging/passeport
           mkdir -p /mnt/plugin-staging/passeport
@@ -197,7 +197,7 @@ initFile: |
 Variante avec le tar.gz, pour une image d'outils qui n'a ni `wget` ni `unzip` (seulement `curl` et `tar`) : remplacer les lignes de téléchargement et de décompression de l'initContainer par
 
 ```sh
-curl -fsS --cacert <ca-interne.crt> -o /mnt/plugin-staging/passeport.tar.gz "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.1.0.tar.gz"
+curl -fsS --cacert <ca-interne.crt> -o /mnt/plugin-staging/passeport.tar.gz "https://<depot-artefacts-interne>/passeport/passeport-group-provider-3.1.1.tar.gz"
 echo "<sha256-du-tar-gz>  /mnt/plugin-staging/passeport.tar.gz" | sha256sum -c -
 rm -rf /mnt/plugin-staging/passeport
 mkdir -p /mnt/plugin-staging/passeport
@@ -220,7 +220,7 @@ Construire une image à partir de l'image SEP autorisée par la CNAM, avec le pl
 ```dockerfile
 FROM <registre-interne>/<image-sep-autorisee>@sha256:<digest>
 # le contexte de build contient le dossier issu de la décompression du zip vérifié
-COPY --chown=<uid-sep>:0 passeport-group-provider-3.1.0/ /usr/lib/starburst/plugin/passeport/
+COPY --chown=<uid-sep>:0 passeport-group-provider-3.1.1/ /usr/lib/starburst/plugin/passeport/
 ```
 
 Vérifier le SHA-256 du zip avant de le décompresser dans le contexte de build. Pour changer de version du plugin, reconstruire l'image.

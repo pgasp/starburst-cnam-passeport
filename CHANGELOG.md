@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.1.1
+- Compilé contre `trino-spi` 483 (SEP 2026.6.1 LTS, Trino 483, JDK Temurin 25), au lieu de 482. Aucun changement de code ni de comportement : le plugin n'utilise que `GroupProvider`, `SystemAccessControl`, `Plugin`, les annotations de fonctions scalaires et `BlockBuilder`, inchangés entre 482 et 483 (seuls les blocs construits directement, hors `BlockBuilder`, sont impactés par la 483).
+- 110 tests inchangés, verts.
+
 ## 3.1.0 (changement cassant)
 
 ### Ajouté

@@ -6,13 +6,13 @@
 
     <groupId>io.starburst.cnam</groupId>
     <artifactId>passeport-group-provider</artifactId>
-    <version>3.1.0</version>
+    <version>3.1.1</version>
     <packaging>trino-plugin</packaging>
 
     <properties>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
-        <trino.version>482</trino.version>
+        <trino.version>483</trino.version>
     </properties>
 
     <dependencies>
